@@ -1,0 +1,48 @@
+{
+  "name": "personal-codex-builder-frontend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@hookform/resolvers": "^5.4.0",
+    "@tanstack/react-query": "^5.101.2",
+    "@tiptap/extension-color": "^2.26.2",
+    "@tiptap/extension-highlight": "^2.26.2",
+    "@tiptap/extension-link": "^2.26.2",
+    "@tiptap/extension-placeholder": "^2.26.2",
+    "@tiptap/extension-text-style": "^2.26.2",
+    "@tiptap/extension-underline": "^2.26.2",
+    "@tiptap/react": "^2.26.2",
+    "@tiptap/starter-kit": "^2.26.2",
+    "lucide-react": "^1.23.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-hook-form": "^7.80.0",
+    "react-router-dom": "^6.30.1",
+    "zod": "^4.4.3",
+    "zustand": "^5.0.14"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.3.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "context7": "^1.0.3",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.61.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.3",
+    "vitest": "^4.1.9"
+  }
+}

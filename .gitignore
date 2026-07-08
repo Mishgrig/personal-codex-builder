@@ -1,0 +1,102 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+credentials/
+credentials.json
+
+# Python
+.venv/
+.venv-py39-backup-20260703/
+venv/
+env/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+*.pyo
+*.pyd
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+.npm-cache/
+frontend/.npm-cache/
+dist/
+frontend/dist/
+build/
+frontend/build/
+coverage/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Local databases and runtime data
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+data/
+backend/data/
+storage/
+backend/storage/
+workspaces/
+backend/workspaces/
+instance/
+!backend/app/storage/
+!backend/app/storage/**
+backend/app/storage/__pycache__/
+backend/app/storage/*.pyc
+
+# User files and media
+media/
+backend/media/
+uploads/
+backend/uploads/
+attachments/
+backend/attachments/
+gallery/
+backend/gallery/
+!frontend/src/features/media/
+!frontend/src/features/media/**
+!frontend/src/features/workspaces/
+!frontend/src/features/workspaces/**
+
+# Backups and exports
+backups/
+backend/backups/
+exports/
+backend/exports/
+archives/
+*.zip
+*.tar
+*.tar.gz
+
+# Logs
+*.log
+logs/
+backend.log
+frontend.log
+backend-*.log
+frontend-*.log
+
+# Local tools and browser automation
+.playwright-browsers/
+test-results/
+tmp/
+tmp-qa/
+.run/
+.test-data/
+.pycache/
+
+# IDE and OS
+.DS_Store
+.vscode/
+.idea/
