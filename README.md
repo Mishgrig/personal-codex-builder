@@ -40,7 +40,7 @@ data/workspaces/<workspace-slug>/
 Backend:
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
+cd personal-codex-builder
 python3 -m venv .venv
 ./.venv/bin/pip install -r backend/requirements.txt
 ```
@@ -48,7 +48,7 @@ python3 -m venv .venv
 Frontend:
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend
+cd personal-codex-builder/frontend
 npm install
 ```
 
@@ -57,14 +57,14 @@ npm install
 Backend:
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
-PYTHONPATH=backend ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --app-dir /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
+cd personal-codex-builder
+PYTHONPATH=backend ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --app-dir .
 ```
 
 Frontend:
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend
+cd personal-codex-builder/frontend
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
@@ -87,7 +87,7 @@ Examples:
 Backend:
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
+cd personal-codex-builder
 ./.venv/bin/ruff check backend
 PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q
 ```
@@ -95,14 +95,14 @@ PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests
 Frontend:
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend
+cd personal-codex-builder/frontend
 npm --cache .npm-cache run build
 npm --cache .npm-cache test -- --run
 ```
 
 ## GitHub sync and AI review
 
-GitHub is used only for source code and documentation.
+GitHub contains source code and documentation only.
 
 - Source code, scripts, plans, and safe docs can be pushed.
 - Local databases, workspace data, uploaded media, backups, exports, logs, caches, and runtime artifacts stay on the local machine and are ignored by git.

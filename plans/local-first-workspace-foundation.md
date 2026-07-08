@@ -107,8 +107,8 @@ Run all commands from the repository root unless a step explicitly says otherwis
    `backend/tests/test_api.py`
 
 4. Run validation:
-   `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && ./.venv/bin/ruff check backend`
-   `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q`
+   `cd personal-codex-builder && ./.venv/bin/ruff check backend`
+   `cd personal-codex-builder && PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q`
 
 Expected successful test transcript shape:
 

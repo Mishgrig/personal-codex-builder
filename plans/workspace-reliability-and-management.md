@@ -105,12 +105,12 @@ Run all commands from the repository root unless otherwise specified.
    new frontend tests under `frontend/src/**`
 
 4. Run backend validation:
-   `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && ./.venv/bin/ruff check backend`
-   `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q`
+   `cd personal-codex-builder && ./.venv/bin/ruff check backend`
+   `cd personal-codex-builder && PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q`
 
 5. Run frontend validation:
-   `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend && npm --cache .npm-cache run build`
-   `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend && npm --cache .npm-cache test -- --run`
+   `cd personal-codex-builder/frontend && npm --cache .npm-cache run build`
+   `cd personal-codex-builder/frontend && npm --cache .npm-cache test -- --run`
 
 Expected successful backend lint shape:
 

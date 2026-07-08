@@ -38,21 +38,21 @@ The application must remain offline local-first.
 ### Backend
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
-PYTHONPATH=backend ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --app-dir /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
+cd personal-codex-builder
+PYTHONPATH=backend ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --app-dir .
 ```
 
 ### Frontend
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend
+cd personal-codex-builder/frontend
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
 ### macOS launcher
 
 ```bash
-cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder
+cd personal-codex-builder
 ./Personal\ Codex\ Builder.command
 ```
 
@@ -92,7 +92,7 @@ Never push:
 
 ## Current GitHub sync policy
 
-- GitHub repository visibility must be private unless explicitly changed by the owner.
+- GitHub repository may be private or public depending on the owner's chosen review workflow.
 - Only source code, safe configuration examples, and documentation should be committed.
 - The application must remain fully usable offline without GitHub.
 - Remote history must not be force-pushed unless the owner explicitly approves it.
@@ -103,6 +103,6 @@ Never push:
 2. Create focused feature branches for larger Codex changes.
 3. Commit only source code and safe docs.
 4. Run backend and frontend checks locally before pushing.
-5. Push the branch to the private GitHub repository.
+5. Push the branch to the GitHub repository.
 6. Connect that repository in ChatGPT for source review and discussion.
 7. Keep local runtime data on the machine and outside git at all times.

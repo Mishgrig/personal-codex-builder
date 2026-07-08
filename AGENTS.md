@@ -99,18 +99,18 @@ Run the commands that actually exist in this repository. If a plan depends on a 
 
 Backend checks:
 
-- `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && ./.venv/bin/ruff check backend`
-- `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q`
+- `cd personal-codex-builder && ./.venv/bin/ruff check backend`
+- `cd personal-codex-builder && PYTHONPYCACHEPREFIX=.pycache PYTHONPATH=backend ./.venv/bin/pytest backend/tests -q`
 
 Frontend checks:
 
-- `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend && npm --cache .npm-cache run build`
-- `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend && npm --cache .npm-cache test`
+- `cd personal-codex-builder/frontend && npm --cache .npm-cache run build`
+- `cd personal-codex-builder/frontend && npm --cache .npm-cache test`
 
 Local dev run:
 
-- Backend: `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder && PYTHONPATH=backend ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --app-dir /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder`
-- Frontend: `cd /Users/mikechard/Documents/Codex\ constructor/personal-codex-builder/frontend && npm run dev -- --host 127.0.0.1 --port 5173`
+- Backend: `cd personal-codex-builder && PYTHONPATH=backend ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --app-dir .`
+- Frontend: `cd personal-codex-builder/frontend && npm run dev -- --host 127.0.0.1 --port 5173`
 - Launcher: `Personal Codex Builder.command`
 
 ## Near-term roadmap assumptions
