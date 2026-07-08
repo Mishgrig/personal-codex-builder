@@ -1,7 +1,9 @@
 import { useState } from "react";
-import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import { Download, ExternalLink, FilePlus2, Pencil, Plus, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type { CardDetail, CardSource } from "../../types/models";
+import { AutoResizeTextarea } from "../../shared/components/AutoResizeTextarea";
+import { IconButton } from "../../shared/components/IconButton";
 
 interface SourcesSectionProps {
   workspaceSlug: string;
@@ -43,6 +45,38 @@ export function SourcesSection({ workspaceSlug, card, onRefresh }: SourcesSectio
             <div>
               <strong>{source.title}</strong>
               <p>{source.note || source.source_type}</p>
+              {source.assets.length ? (
+                <div className="asset-row-actions">
+                  {source.assets.map((asset) => (
+                    <div className="attachment-row" key={asset.id}>
+                      <div>
+                        <strong>{asset.original_name}</strong>
+                        <p>
+                          {asset.mime_type} · {(asset.size / 1024).toFixed(1)} KB · asset {asset.id}
+                        </p>
+                      </div>
+                      <div className="row-actions">
+                        <a className="icon-button" href={asset.url} target="_blank" rel="noreferrer" title="Open file">
+                          <ExternalLink size={14} />
+                        </a>
+                        <a className="icon-button" href={asset.url} download={asset.original_name} title="Download file">
+                          <Download size={14} />
+                        </a>
+                        <IconButton
+                          danger
+                          title="Remove file"
+                          onClick={async () => {
+                            await api.deleteSourceAsset(workspaceSlug, source.id, String(asset.id));
+                            await onRefresh();
+                          }}
+                        >
+                          <Trash2 size={14} />
+                        </IconButton>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="row-actions">
               {source.url ? (
@@ -50,11 +84,31 @@ export function SourcesSection({ workspaceSlug, card, onRefresh }: SourcesSectio
                   <ExternalLink size={14} />
                 </a>
               ) : null}
-              <button className="icon-button" title="Edit source" onClick={() => setEditing(source)}>
+              <label className="icon-button" title="Add file to source">
+                <FilePlus2 size={14} />
+                <input
+                  type="file"
+                  hidden
+                  multiple
+                  onChange={(event) => {
+                    const files = event.target.files;
+                    if (!files?.length) {
+                      return;
+                    }
+                    void (async () => {
+                      for (const file of Array.from(files)) {
+                        await api.uploadSourceAsset(workspaceSlug, source.id, file);
+                      }
+                      await onRefresh();
+                    })();
+                  }}
+                />
+              </label>
+              <IconButton title="Edit source" onClick={() => setEditing(source)}>
                 <Pencil size={14} />
-              </button>
-              <button
-                className="icon-button danger"
+              </IconButton>
+              <IconButton
+                danger
                 title="Delete source"
                 onClick={async () => {
                   await api.deleteSource(workspaceSlug, source.id);
@@ -62,26 +116,28 @@ export function SourcesSection({ workspaceSlug, card, onRefresh }: SourcesSectio
                 }}
               >
                 <Trash2 size={14} />
-              </button>
+              </IconButton>
             </div>
           </div>
         ))}
       </div>
 
       <div className="subform">
-        <input
-          className="themed-input"
-          placeholder="Source title"
-          value={editing.title}
-          onChange={(event) => setEditing((current) => ({ ...current, title: event.target.value }))}
-        />
-        <input
-          className="themed-input"
-          placeholder="URL"
-          value={editing.url}
-          onChange={(event) => setEditing((current) => ({ ...current, url: event.target.value }))}
-        />
-        <textarea
+        <div className="source-inline-fields">
+          <input
+            className="themed-input"
+            placeholder="Source title"
+            value={editing.title}
+            onChange={(event) => setEditing((current) => ({ ...current, title: event.target.value }))}
+          />
+          <input
+            className="themed-input"
+            placeholder="URL"
+            value={editing.url}
+            onChange={(event) => setEditing((current) => ({ ...current, url: event.target.value }))}
+          />
+        </div>
+        <AutoResizeTextarea
           className="themed-textarea"
           rows={2}
           placeholder="Note"
@@ -111,4 +167,3 @@ export function SourcesSection({ workspaceSlug, card, onRefresh }: SourcesSectio
     </section>
   );
 }
-

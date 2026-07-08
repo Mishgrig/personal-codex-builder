@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import tempfile
 import zipfile
@@ -11,8 +12,11 @@ from typing import Any
 
 from app.core.exceptions import ValidationAPIError
 from app.core.paths import (
+    LEGACY_WORKSPACE_METADATA_FILENAME,
     WORKSPACE_DB_FILENAME,
     WORKSPACE_METADATA_FILENAME,
+    app_safety_backups_dir,
+    legacy_workspace_metadata_path,
     resolve_workspace_db_path,
     workspace_dir,
     workspace_exports_dir,
@@ -28,16 +32,18 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_workspace_export(slug: str) -> dict[str, Any]:
+def _sanitize_reason(reason: str) -> str:
+    cleaned = re.sub(r"[^a-z0-9]+", "-", reason.strip().lower())
+    return cleaned.strip("-") or "manual"
+
+
+def _archive_workspace_contents(slug: str, archive_path: Path) -> None:
     db_path = resolve_workspace_db_path(slug)
     metadata_path = workspace_metadata_path(slug)
+    legacy_metadata_path = legacy_workspace_metadata_path(slug)
     files_dir = workspace_files_dir(slug)
-    exports_dir = workspace_exports_dir(slug)
-    exports_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = _now()
-    archive_filename = f"{slug}-{timestamp.strftime('%Y%m%dT%H%M%SZ')}.workspace.zip"
-    archive_path = exports_dir / archive_filename
+    archive_path.parent.mkdir(parents=True, exist_ok=True)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_root = Path(tmpdir)
@@ -48,16 +54,45 @@ def create_workspace_export(slug: str) -> dict[str, Any]:
             archive.write(temp_db_path, arcname=WORKSPACE_DB_FILENAME)
             if metadata_path.exists():
                 archive.write(metadata_path, arcname=WORKSPACE_METADATA_FILENAME)
+            if legacy_metadata_path.exists():
+                archive.write(legacy_metadata_path, arcname=LEGACY_WORKSPACE_METADATA_FILENAME)
             if files_dir.exists():
                 for file_path in files_dir.rglob("*"):
                     if file_path.is_file():
                         archive.write(file_path, arcname=file_path.relative_to(files_dir.parent).as_posix())
+
+
+def create_workspace_export(slug: str) -> dict[str, Any]:
+    exports_dir = workspace_exports_dir(slug)
+    exports_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = _now()
+    archive_filename = f"{slug}-{timestamp.strftime('%Y%m%dT%H%M%SZ')}.workspace.zip"
+    archive_path = exports_dir / archive_filename
+
+    _archive_workspace_contents(slug, archive_path)
 
     logger.info("Exported workspace archive", extra={"slug": slug, "archive": archive_filename})
     return {
         "filename": archive_filename,
         "created_at": timestamp.isoformat(),
         "size_bytes": archive_path.stat().st_size,
+        "path": archive_path.relative_to(workspace_dir(slug).parent.parent).as_posix(),
+    }
+
+
+def create_workspace_safety_export(slug: str, *, reason: str) -> dict[str, Any]:
+    timestamp = _now()
+    safe_reason = _sanitize_reason(reason)
+    archive_filename = f"{slug}-{timestamp.strftime('%Y%m%dT%H%M%SZ')}-{safe_reason}.workspace.zip"
+    archive_path = app_safety_backups_dir() / archive_filename
+    _archive_workspace_contents(slug, archive_path)
+    logger.info("Created workspace safety archive", extra={"slug": slug, "archive": archive_filename, "reason": safe_reason})
+    return {
+        "filename": archive_filename,
+        "created_at": timestamp.isoformat(),
+        "size_bytes": archive_path.stat().st_size,
+        "reason": safe_reason,
         "path": archive_path.relative_to(workspace_dir(slug).parent.parent).as_posix(),
     }
 
@@ -70,11 +105,15 @@ def extract_workspace_archive(archive_path: Path) -> tuple[Path, dict[str, Any]]
     try:
         with zipfile.ZipFile(archive_path) as archive:
             members = archive.namelist()
-            required = {WORKSPACE_DB_FILENAME, WORKSPACE_METADATA_FILENAME}
-            if not required.issubset(set(members)):
+            has_db = WORKSPACE_DB_FILENAME in members
+            has_metadata = WORKSPACE_METADATA_FILENAME in members or LEGACY_WORKSPACE_METADATA_FILENAME in members
+            if not has_db or not has_metadata:
                 raise ValidationAPIError(
                     "Archive is missing required workspace files.",
-                    details={"required": sorted(required), "members": sorted(members)},
+                    details={
+                        "required": [WORKSPACE_DB_FILENAME, f"{WORKSPACE_METADATA_FILENAME} or {LEGACY_WORKSPACE_METADATA_FILENAME}"],
+                        "members": sorted(members),
+                    },
                 )
             for member in members:
                 target_path = extract_root / member
@@ -88,7 +127,10 @@ def extract_workspace_archive(archive_path: Path) -> tuple[Path, dict[str, Any]]
                 with archive.open(member) as source, resolved.open("wb") as destination:
                     shutil.copyfileobj(source, destination)
 
-        metadata = json.loads((extract_root / WORKSPACE_METADATA_FILENAME).read_text(encoding="utf-8"))
+        metadata_path = extract_root / WORKSPACE_METADATA_FILENAME
+        if not metadata_path.exists():
+            metadata_path = extract_root / LEGACY_WORKSPACE_METADATA_FILENAME
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
         return extract_root, metadata
     except Exception:
         shutil.rmtree(temp_root, ignore_errors=True)

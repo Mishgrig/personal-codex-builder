@@ -29,7 +29,13 @@ from app.services.card_service import (
     update_card,
     update_source,
 )
-from app.services.file_service import add_asset, delete_asset
+from app.services.file_service import (
+    add_asset,
+    add_source_asset,
+    attach_existing_source_asset,
+    delete_asset,
+    delete_source_asset,
+)
 from app.services.search_service import rebuild_index, search_cards
 
 router = APIRouter()
@@ -237,6 +243,39 @@ def remove_workspace_source(
     return {"data": ActionStatus(message="Source deleted.")}
 
 
+@workspace_router.post("/sources/{source_id}/assets", response_model=APIDataEnvelope[CardDetail])
+def post_workspace_source_asset(
+    workspace_slug: str,
+    source_id: int,
+    upload: UploadFile = File(...),
+    session: Session = Depends(get_workspace_db),
+) -> dict[str, CardDetail]:
+    card_id = add_source_asset(session, workspace_slug=workspace_slug, source_id=source_id, upload=upload)
+    return {"data": _get_card_detail_payload(session, card_id)}
+
+
+@workspace_router.post("/sources/{source_id}/assets/{asset_id}", response_model=APIDataEnvelope[CardDetail])
+def post_workspace_source_existing_asset(
+    workspace_slug: str,
+    source_id: int,
+    asset_id: str,
+    session: Session = Depends(get_workspace_db),
+) -> dict[str, CardDetail]:
+    card_id = attach_existing_source_asset(session, source_id=source_id, asset_id=asset_id)
+    return {"data": _get_card_detail_payload(session, card_id)}
+
+
+@workspace_router.delete("/sources/assets/{asset_id}", response_model=APIDataEnvelope[CardDetail])
+def remove_workspace_source_asset(
+    workspace_slug: str,
+    asset_id: str,
+    source_id: int = Query(...),
+    session: Session = Depends(get_workspace_db),
+) -> dict[str, CardDetail]:
+    card_id = delete_source_asset(session, source_id=source_id, asset_id=asset_id)
+    return {"data": _get_card_detail_payload(session, card_id)}
+
+
 @router.post("/{card_id}/relations", response_model=APIDataEnvelope[CardDetail])
 def post_relation(
     card_id: int,
@@ -305,23 +344,23 @@ def post_workspace_asset(
 
 @router.delete("/assets/{asset_id}", response_model=APIDataEnvelope[CardDetail])
 def remove_asset(
-    asset_id: int,
+    asset_id: str,
     card_id: int = Query(...),
     session: Session = Depends(get_db),
     workspace_slug: str = Depends(get_workspace_slug),
 ) -> dict[str, CardDetail]:
-    delete_asset(session, workspace_slug=workspace_slug, asset_id=asset_id)
+    delete_asset(session, workspace_slug=workspace_slug, asset_id=asset_id, card_id=card_id)
     return {"data": _get_card_detail_payload(session, card_id)}
 
 
 @workspace_router.delete("/assets/{asset_id}", response_model=APIDataEnvelope[CardDetail])
 def remove_workspace_asset(
     workspace_slug: str,
-    asset_id: int,
+    asset_id: str,
     card_id: int = Query(...),
     session: Session = Depends(get_workspace_db),
 ) -> dict[str, CardDetail]:
-    delete_asset(session, workspace_slug=workspace_slug, asset_id=asset_id)
+    delete_asset(session, workspace_slug=workspace_slug, asset_id=asset_id, card_id=card_id)
     return {"data": _get_card_detail_payload(session, card_id)}
 
 

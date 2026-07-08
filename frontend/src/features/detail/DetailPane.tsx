@@ -1,14 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { queryClient } from "../../app/queryClient";
-import { RichTextEditor } from "../editor/RichTextEditor";
+import { AutoResizeTextarea } from "../../shared/components/AutoResizeTextarea";
+import { IconButton } from "../../shared/components/IconButton";
 import { GallerySection } from "../media/GallerySection";
 import { AttachmentsSection } from "../media/AttachmentsSection";
 import { SourcesSection } from "../sources/SourcesSection";
 import { RelationsSection } from "../relations/RelationsSection";
 import type { CardDetail, CardListItem, CardSchema, TaxonomyTerm } from "../../types/models";
 import { highlightText } from "../../utils/highlight";
+
+const RichTextEditor = lazy(() =>
+  import("../editor/RichTextEditor").then((module) => ({ default: module.RichTextEditor })),
+);
 
 interface DetailPaneProps {
   workspaceSlug: string | null;
@@ -19,6 +24,7 @@ interface DetailPaneProps {
   allCards: CardListItem[];
   onRefresh: () => Promise<void>;
   onDeleteCurrent: () => Promise<void>;
+  onOpenCard: (cardId: number) => void;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -32,9 +38,11 @@ export function DetailPane({
   allCards,
   onRefresh,
   onDeleteCurrent,
+  onOpenCard,
 }: DetailPaneProps) {
   const [draft, setDraft] = useState<CardDetail | null>(card);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
   const lastSavedSnapshot = useRef("");
 
   useEffect(() => {
@@ -72,6 +80,7 @@ export function DetailPane({
   }, [draft, workspaceSlug]);
 
   const schema = draft?.schema_id ? schemas.find((item) => item.id === draft.schema_id) ?? null : null;
+  const coverUrl = draft?.cover_url ?? draft?.gallery[0]?.url ?? null;
 
   if (!draft || !workspaceSlug) {
     return (
@@ -109,11 +118,11 @@ export function DetailPane({
       <div className="pane-header detail-header">
         <div>
           <h2>Card Detail</h2>
-          <p>{saveLabel(saveState)}</p>
+          <p>{saveLabel(saveState, draft.updated_at, draft.created_at)}</p>
         </div>
-        <button className="icon-button danger" title="Delete card" onClick={() => void onDeleteCurrent()}>
+        <IconButton danger title="Delete card" onClick={() => void onDeleteCurrent()}>
           <Trash2 size={16} />
-        </button>
+        </IconButton>
       </div>
 
       <article className="detail-card">
@@ -122,76 +131,83 @@ export function DetailPane({
             <input
               className="title-input"
               value={draft.title}
+              placeholder="Untitled card"
               onChange={(event) => setDraft((current) => (current ? { ...current, title: event.target.value } : current))}
             />
-            <textarea
+            <AutoResizeTextarea
               className="summary-input"
-              rows={2}
               value={draft.summary}
               onChange={(event) => setDraft((current) => (current ? { ...current, summary: event.target.value } : current))}
               placeholder="Summary"
             />
-          </div>
-          {draft.gallery[0] ? (
-            <div className="cover-frame">
-              <img src={draft.gallery[0].url} alt={draft.title} className="cover-image" />
+            <div className="detail-meta-grid">
+              <label className="field-stack">
+                <span>Status</span>
+                <select
+                  className="themed-select"
+                  value={draft.status}
+                  onChange={(event) => setDraft((current) => (current ? { ...current, status: event.target.value } : current))}
+                >
+                  <option value="draft">Draft</option>
+                  <option value="active">Active</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </label>
+              <label className="field-stack">
+                <span>Card Type</span>
+                <select
+                  className="themed-select"
+                  value={draft.schema_id ?? ""}
+                  onChange={(event) => {
+                    const nextSchemaId = event.target.value || null;
+                    const nextSchema = schemas.find((item) => item.id === nextSchemaId);
+                    setDraft((current) =>
+                      current
+                        ? {
+                            ...current,
+                            schema_id: nextSchemaId,
+                            schema: nextSchema ?? null,
+                          }
+                        : current,
+                    );
+                  }}
+                >
+                  <option value="">No card type</option>
+                  {schemas.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="field-stack">
+                <span>Created</span>
+                <strong>{formatDateTime(draft.created_at)}</strong>
+              </div>
+              <div className="field-stack">
+                <span>Updated</span>
+                <strong>{formatDateTime(draft.updated_at)}</strong>
+              </div>
             </div>
-          ) : (
-            <div className="cover-frame placeholder">No cover</div>
-          )}
-        </div>
-
-        <div className="metadata-grid">
-          <label className="field-stack">
-            <span>Slug</span>
-            <input
-              className="themed-input"
-              value={draft.slug}
-              onChange={(event) => setDraft((current) => (current ? { ...current, slug: event.target.value } : current))}
-            />
-          </label>
-          <label className="field-stack">
-            <span>Status</span>
-            <select
-              className="themed-select"
-              value={draft.status}
-              onChange={(event) => setDraft((current) => (current ? { ...current, status: event.target.value } : current))}
-            >
-              <option value="draft">Draft</option>
-              <option value="active">Active</option>
-              <option value="archived">Archived</option>
-            </select>
-          </label>
-          <label className="field-stack">
-            <span>Schema</span>
-            <select
-              className="themed-select"
-              value={draft.schema_id ?? ""}
-              onChange={(event) => {
-                const nextSchemaId = event.target.value || null;
-                const nextSchema = schemas.find((item) => item.id === nextSchemaId);
-                setDraft((current) =>
-                  current
-                    ? {
-                        ...current,
-                        schema_id: nextSchemaId,
-                        schema: nextSchema ?? null,
-                      }
-                    : current,
-                );
-              }}
-            >
-              <option value="">No schema</option>
-              {schemas.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          </div>
+          <button
+            className={`cover-frame compact ${coverUrl ? "" : "placeholder"}`}
+            type="button"
+            onClick={() => coverUrl && setCoverPreviewOpen(true)}
+            title={coverUrl ? "Open cover preview" : "No cover selected yet"}
+          >
+            {coverUrl ? (
+              <img src={coverUrl} alt={draft.title} className="cover-image" />
+            ) : (
+              <span>No cover</span>
+            )}
+          </button>
         </div>
 
         <div className="tag-zone">
+          <div className="section-header">
+            <h3>Categories & tags</h3>
+          </div>
           {["domain", "type", "subtype", "layer"].map((category) => (
             <div className="taxonomy-editor" key={category}>
               <span className="field-label">{capitalize(category)}</span>
@@ -239,10 +255,10 @@ export function DetailPane({
         </div>
 
         {schema?.fields.length ? (
-          <section className="detail-section">
-            <div className="section-header">
-              <h3>Dynamic Fields</h3>
-            </div>
+          <details className="detail-section" open>
+            <summary className="section-header">
+              <h3>Fields</h3>
+            </summary>
             <div className="dynamic-grid">
               {schema.fields
                 .filter((field) => field.show_in_card)
@@ -264,11 +280,21 @@ export function DetailPane({
                   />
                 ))}
             </div>
-          </section>
+          </details>
         ) : null}
 
-        <GallerySection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
-        <AttachmentsSection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
+        <details className="detail-section" open>
+          <summary className="section-header">
+            <h3>Gallery</h3>
+          </summary>
+          <GallerySection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
+        </details>
+        <details className="detail-section" open>
+          <summary className="section-header">
+            <h3>Attachments</h3>
+          </summary>
+          <AttachmentsSection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
+        </details>
 
         {query && searchExcerpt ? (
           <section className="detail-section">
@@ -279,33 +305,55 @@ export function DetailPane({
           </section>
         ) : null}
 
-        <section className="detail-section">
-          <div className="section-header">
+        <details className="detail-section" open>
+          <summary className="section-header">
             <h3>Body</h3>
-          </div>
-          <RichTextEditor
-            value={draft.body_json}
-            onChange={(bodyJson) =>
-              setDraft((current) =>
-                current
-                  ? {
-                      ...current,
-                      body_json: bodyJson,
-                    }
-                  : current,
-              )
-            }
+          </summary>
+          <Suspense fallback={<div className="editor-shell loading">Preparing editor…</div>}>
+            <RichTextEditor
+              value={draft.body_json}
+              onChange={(bodyJson) =>
+                setDraft((current) =>
+                  current
+                    ? {
+                        ...current,
+                        body_json: bodyJson,
+                      }
+                    : current,
+                )
+              }
+            />
+          </Suspense>
+        </details>
+
+        <details className="detail-section" open>
+          <summary className="section-header">
+            <h3>Sources</h3>
+          </summary>
+          <SourcesSection workspaceSlug={workspaceSlug} card={draft} onRefresh={onRefresh} />
+        </details>
+        <details className="detail-section" open>
+          <summary className="section-header">
+            <h3>Relations</h3>
+          </summary>
+          <RelationsSection
+            workspaceSlug={workspaceSlug}
+            card={draft}
+            candidates={allCards}
+            onUpdated={applyRemoteCard}
+            onOpenCard={onOpenCard}
           />
-        </section>
+        </details>
 
-        <SourcesSection workspaceSlug={workspaceSlug} card={draft} onRefresh={onRefresh} />
-        <RelationsSection workspaceSlug={workspaceSlug} card={draft} candidates={allCards} onUpdated={applyRemoteCard} />
-
-        <footer className="card-footer">
-          <span>UID {draft.uid}</span>
-          <span>Slug {draft.slug}</span>
-        </footer>
       </article>
+
+      {coverPreviewOpen && coverUrl ? (
+        <div className="modal-backdrop" onClick={() => setCoverPreviewOpen(false)}>
+          <div className="modal-card compact-media-modal" onClick={(event) => event.stopPropagation()}>
+            <img src={coverUrl} alt={draft.title} className="detail-cover-preview" />
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -335,9 +383,8 @@ function DynamicFieldEditor({
     return (
       <label className="field-stack">
         <span>{field.label}</span>
-        <textarea
+        <AutoResizeTextarea
           className="themed-textarea"
-          rows={3}
           value={String(value ?? "")}
           placeholder={field.placeholder}
           onChange={(event) => onChange(event.target.value)}
@@ -412,17 +459,22 @@ function toPayload(card: CardDetail) {
     summary: card.summary,
     status: card.status,
     schema_id: card.schema_id,
+    cover_asset_id: card.cover_asset_id ?? null,
     body_json: card.body_json,
     dynamic_fields: card.dynamic_fields,
     taxonomy_term_ids: card.taxonomy_terms.map((term) => term.id),
   };
 }
 
-function saveLabel(saveState: SaveState) {
+function formatDateTime(value: string | undefined) {
+  return value ? new Date(value).toLocaleString("en-GB") : "Unknown";
+}
+
+function saveLabel(saveState: SaveState, updatedAt?: string, createdAt?: string) {
   if (saveState === "saving") return "Saving changes…";
-  if (saveState === "saved") return "Saved";
+  if (saveState === "saved") return `Updated ${formatDateTime(updatedAt)}`;
   if (saveState === "error") return "Save failed";
-  return "Local reader mode";
+  return `Created ${formatDateTime(createdAt)}`;
 }
 
 function buildExcerpt(bodyText: string, query: string) {

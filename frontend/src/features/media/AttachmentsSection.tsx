@@ -1,6 +1,7 @@
-import { Download, FilePlus2, Trash2 } from "lucide-react";
+import { Download, ExternalLink, FilePlus2, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type { CardDetail } from "../../types/models";
+import { IconButton } from "../../shared/components/IconButton";
 
 interface AttachmentsSectionProps {
   workspaceSlug: string;
@@ -36,26 +37,26 @@ export function AttachmentsSection({ workspaceSlug, card, onUpdated }: Attachmen
               <div>
                 <strong>{asset.original_name}</strong>
                 <p>
-                  {asset.mime_type} · {(asset.size / 1024).toFixed(1)} KB
+                  {asset.mime_type} · {(asset.size / 1024).toFixed(1)} KB · asset {asset.id}
                 </p>
               </div>
               <div className="row-actions">
                 <a className="icon-button" href={asset.url} target="_blank" rel="noreferrer" title="Open attachment">
-                  open
+                  <ExternalLink size={14} />
                 </a>
                 <a className="icon-button" href={asset.url} download={asset.original_name} title="Download attachment">
                   <Download size={14} />
                 </a>
-                <button
-                  className="icon-button danger"
+                <IconButton
                   title="Remove attachment"
+                  danger
                   onClick={async () => {
                     const updated = await api.deleteAsset(workspaceSlug, asset.id, card.id);
                     onUpdated(updated);
                   }}
                 >
                   <Trash2 size={14} />
-                </button>
+                </IconButton>
               </div>
             </div>
           ))}
@@ -66,4 +67,3 @@ export function AttachmentsSection({ workspaceSlug, card, onUpdated }: Attachmen
     </section>
   );
 }
-

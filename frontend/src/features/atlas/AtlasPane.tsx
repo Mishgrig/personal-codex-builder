@@ -6,14 +6,16 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, LayoutGrid, Rows2 } from "lucide-react";
+import { ArrowUpDown, BookPlus, Eye, GripVertical, LayoutGrid, PanelBottom, PanelRight, Plus, Rows2, Wrench } from "lucide-react";
 import type { CardListItem, CardSchema, SearchFilters } from "../../types/models";
-import type { SortMode, ViewMode } from "../../app/store";
+import type { DetailPanePosition, SortMode, ViewMode } from "../../app/store";
+import { PopoverMenu } from "../../shared/components/PopoverMenu";
 import { groupCards, termLabel } from "../../utils/grouping";
 import { highlightText } from "../../utils/highlight";
 
 interface AtlasPaneProps {
   cards: CardListItem[];
+  totalCards: number;
   query: string;
   filters: SearchFilters;
   selectedCardId: number | null;
@@ -21,17 +23,25 @@ interface AtlasPaneProps {
   sortMode: SortMode;
   showSummary: boolean;
   showCover: boolean;
+  groupByCategory: boolean;
   schemas: CardSchema[];
+  detailPanePosition: DetailPanePosition;
   onSelectCard: (cardId: number) => void;
   onReorderGroup: (orderedIds: number[]) => void;
   onViewModeChange: (mode: ViewMode) => void;
   onSortModeChange: (mode: SortMode) => void;
   onShowSummaryChange: (value: boolean) => void;
   onShowCoverChange: (value: boolean) => void;
+  onGroupByCategoryChange: (value: boolean) => void;
+  onCreateCard: () => void;
+  onOpenCardTypeStudio: () => void;
+  onDetailPanePositionChange: (value: DetailPanePosition) => void;
+  onOpenTableView: () => void;
 }
 
 export function AtlasPane({
   cards,
+  totalCards,
   query,
   filters,
   selectedCardId,
@@ -39,53 +49,118 @@ export function AtlasPane({
   sortMode,
   showSummary,
   showCover,
+  groupByCategory,
   schemas,
+  detailPanePosition,
   onSelectCard,
   onReorderGroup,
   onViewModeChange,
   onSortModeChange,
   onShowSummaryChange,
   onShowCoverChange,
+  onGroupByCategoryChange,
+  onCreateCard,
+  onOpenCardTypeStudio,
+  onDetailPanePositionChange,
+  onOpenTableView,
 }: AtlasPaneProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-  const groups = groupCards(cards, filters);
+  const groups = groupCards(cards, filters, groupByCategory);
 
   return (
     <section className="atlas-pane">
       <div className="pane-header">
         <div>
           <h2>Atlas</h2>
-          <p>{cards.length} cards in view</p>
+          <p>Total {totalCards} · Shown {cards.length}</p>
         </div>
         <div className="pane-toolbar">
-          <div className="segmented-control">
-            <button
-              className={viewMode === "list" ? "active" : ""}
-              title="List mode"
-              onClick={() => onViewModeChange("list")}
-            >
-              <Rows2 size={14} />
-            </button>
-            <button
-              className={viewMode === "tile" ? "active" : ""}
-              title="Tile mode"
-              onClick={() => onViewModeChange("tile")}
-            >
-              <LayoutGrid size={14} />
-            </button>
-          </div>
-          <label className="tiny-toggle">
-            <input type="checkbox" checked={showSummary} onChange={(event) => onShowSummaryChange(event.target.checked)} />
-            <span>summary</span>
-          </label>
-          <label className="tiny-toggle">
-            <input type="checkbox" checked={showCover} onChange={(event) => onShowCoverChange(event.target.checked)} />
-            <span>cover</span>
-          </label>
-          <select className="mini-select" value={sortMode} onChange={(event) => onSortModeChange(event.target.value as SortMode)}>
-            <option value="manual">Manual</option>
-            <option value="az">A-Z</option>
-          </select>
+          <PopoverMenu icon={<Wrench size={14} />} label="Card tools">
+            <div className="popover-action-grid">
+              <button className="secondary-button" onClick={onCreateCard}>
+                <Plus size={14} />
+                Add card
+              </button>
+              <button className="secondary-button" onClick={onOpenCardTypeStudio}>
+                <BookPlus size={14} />
+                Card Type Studio
+              </button>
+              <button className="secondary-button" onClick={onOpenTableView}>
+                <LayoutGrid size={14} />
+                Open Table View
+              </button>
+              <button
+                className={`secondary-button ${detailPanePosition === "right" ? "active" : ""}`}
+                onClick={() => onDetailPanePositionChange("right")}
+              >
+                <PanelRight size={14} />
+                Panel Right
+              </button>
+              <button
+                className={`secondary-button ${detailPanePosition === "bottom" ? "active" : ""}`}
+                onClick={() => onDetailPanePositionChange("bottom")}
+              >
+                <PanelBottom size={14} />
+                Panel Bottom
+              </button>
+            </div>
+          </PopoverMenu>
+
+          <PopoverMenu icon={<Eye size={14} />} label="View options">
+            <div className="popover-action-grid">
+              <div className="segmented-control full-width">
+                <button
+                  className={viewMode === "list" ? "active" : ""}
+                  title="List mode"
+                  onClick={() => onViewModeChange("list")}
+                >
+                  <Rows2 size={14} />
+                  List
+                </button>
+                <button
+                  className={viewMode === "tile" ? "active" : ""}
+                  title="Tile mode"
+                  onClick={() => onViewModeChange("tile")}
+                >
+                  <LayoutGrid size={14} />
+                  Tile
+                </button>
+              </div>
+              <label className="tiny-toggle">
+                <input type="checkbox" checked={showSummary} onChange={(event) => onShowSummaryChange(event.target.checked)} />
+                <span>Show summary</span>
+              </label>
+              <label className="tiny-toggle">
+                <input type="checkbox" checked={showCover} onChange={(event) => onShowCoverChange(event.target.checked)} />
+                <span>Show cover</span>
+              </label>
+              <label className="tiny-toggle">
+                <input
+                  type="checkbox"
+                  checked={groupByCategory}
+                  onChange={(event) => onGroupByCategoryChange(event.target.checked)}
+                />
+                <span>Group by category</span>
+              </label>
+            </div>
+          </PopoverMenu>
+
+          <PopoverMenu icon={<ArrowUpDown size={14} />} label="Sort options">
+            <div className="popover-action-grid">
+              <button
+                className={`secondary-button ${sortMode === "manual" ? "active" : ""}`}
+                onClick={() => onSortModeChange("manual")}
+              >
+                Manual
+              </button>
+              <button
+                className={`secondary-button ${sortMode === "az" ? "active" : ""}`}
+                onClick={() => onSortModeChange("az")}
+              >
+                A-Z
+              </button>
+            </div>
+          </PopoverMenu>
         </div>
       </div>
 
@@ -110,6 +185,7 @@ export function AtlasPane({
                       viewMode={viewMode}
                       showSummary={showSummary}
                       showCover={showCover}
+                      sortableEnabled={sortMode === "manual"}
                       schema={schemas.find((schema) => schema.id === card.schema_id) ?? null}
                       onSelect={() => onSelectCard(card.id)}
                     />
@@ -153,6 +229,7 @@ function SortableCard({
   viewMode,
   showSummary,
   showCover,
+  sortableEnabled,
   schema,
   onSelect,
 }: {
@@ -162,10 +239,14 @@ function SortableCard({
   viewMode: ViewMode;
   showSummary: boolean;
   showCover: boolean;
+  sortableEnabled: boolean;
   schema: CardSchema | null;
   onSelect: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: card.id });
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: card.id,
+    disabled: !sortableEnabled,
+  });
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -179,9 +260,11 @@ function SortableCard({
       className={`result-card ${selected ? "selected" : ""} ${viewMode}`}
       onClick={onSelect}
     >
-      <div className="drag-handle" {...attributes} {...listeners}>
-        <GripVertical size={14} />
-      </div>
+      {sortableEnabled ? (
+        <div className="drag-handle" {...attributes} {...listeners}>
+          <GripVertical size={14} />
+        </div>
+      ) : null}
       {showCover && card.cover_url ? (
         <div className="result-cover-shell">
           <img src={card.cover_url} alt={card.title} className="result-cover" />
@@ -199,7 +282,7 @@ function SortableCard({
             </span>
           ))}
         </div>
-        {(showSummary || viewMode === "tile") && card.summary ? (
+        {showSummary && card.summary ? (
           <p className="result-summary">{highlightText(card.summary, query)}</p>
         ) : null}
         {listFields.length ? (

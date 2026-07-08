@@ -7,7 +7,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Bold, Heading1, Heading2, Heading3, Italic, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import { Bold, Italic, List, ListOrdered, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
 import { FontSize } from "./fontSizeExtension";
 
 interface RichTextEditorProps {
@@ -15,7 +15,7 @@ interface RichTextEditorProps {
   onChange: (value: Record<string, unknown>) => void;
 }
 
-const FONT_STEPS = [8, 9, 10, 12, 14];
+const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
@@ -70,20 +70,42 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       <div className="editor-toolbar">
         <select
           className="toolbar-select"
-          value={editor.isActive("heading", { level: 1 }) ? "h1" : editor.isActive("heading", { level: 2 }) ? "h2" : editor.isActive("heading", { level: 3 }) ? "h3" : "body"}
+          value={
+            editor.isActive("heading", { level: 1 })
+              ? "h1"
+              : editor.isActive("heading", { level: 2 })
+                ? "h2"
+                : editor.isActive("heading", { level: 3 })
+                  ? "h3"
+                  : editor.isActive("bulletList")
+                    ? "bullet"
+                    : editor.isActive("orderedList")
+                      ? "ordered"
+                      : "body"
+          }
           onChange={(event) => {
             const next = event.target.value;
             if (next === "body") {
               editor.chain().focus().setParagraph().run();
               return;
             }
+            if (next === "bullet") {
+              editor.chain().focus().toggleBulletList().run();
+              return;
+            }
+            if (next === "ordered") {
+              editor.chain().focus().toggleOrderedList().run();
+              return;
+            }
             editor.chain().focus().toggleHeading({ level: Number(next.replace("h", "")) as 1 | 2 | 3 }).run();
           }}
         >
-          <option value="body">Body</option>
-          <option value="h1">Heading 1</option>
-          <option value="h2">Heading 2</option>
-          <option value="h3">Heading 3</option>
+          <option value="h1">Title (H1)</option>
+          <option value="h2">Heading (H2)</option>
+          <option value="h3">Subheading (H3)</option>
+          <option value="body">Body text</option>
+          <option value="bullet">Bulleted list</option>
+          <option value="ordered">Numbered list</option>
         </select>
 
         <div className="font-size-group">
@@ -129,14 +151,24 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
           <Strikethrough size={15} />
         </button>
+        <button className={editor.isActive("bulletList") ? "toolbar-button active" : "toolbar-button"} title="Bulleted list" onClick={() => editor.chain().focus().toggleBulletList().run()}>
+          <List size={15} />
+        </button>
+        <button className={editor.isActive("orderedList") ? "toolbar-button active" : "toolbar-button"} title="Numbered list" onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+          <ListOrdered size={15} />
+        </button>
         <label className="color-input-shell" title="Text color">
           <input type="color" defaultValue="#f0efe6" onChange={(event) => editor.chain().focus().setColor(event.target.value).run()} />
         </label>
         <label className="color-input-shell highlight" title="Highlight color">
           <input type="color" defaultValue="#d8a026" onChange={(event) => editor.chain().focus().setHighlight({ color: event.target.value }).run()} />
         </label>
-        <button className="toolbar-button" title="Clear highlight" onClick={() => editor.chain().focus().unsetHighlight().run()}>
-          clear
+        <button
+          className="toolbar-button"
+          title="Clear format"
+          onClick={() => editor.chain().focus().unsetHighlight().unsetColor().unsetAllMarks().run()}
+        >
+          Clear format
         </button>
         <button className="toolbar-button" title="Undo" onClick={() => editor.chain().focus().undo().run()}>
           <Undo2 size={15} />
@@ -155,4 +187,3 @@ function applyFont(editor: NonNullable<ReturnType<typeof useEditor>>, fontSize: 
   setFontSize(next);
   editor.chain().focus().setFontSize(`${next}px`).run();
 }
-

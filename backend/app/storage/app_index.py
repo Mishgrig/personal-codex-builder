@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -35,7 +36,17 @@ def get_app_index_session_factory() -> sessionmaker[Session]:
 
 
 def create_app_index_schema() -> None:
-    AppIndexBase.metadata.create_all(bind=get_app_index_engine())
+    engine = get_app_index_engine()
+    AppIndexBase.metadata.create_all(bind=engine)
+    with engine.begin() as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(workspaces)")).all()
+        }
+        if "sort_order" not in columns:
+            connection.execute(
+                text("ALTER TABLE workspaces ADD COLUMN sort_order INTEGER DEFAULT 0 NOT NULL")
+            )
 
 
 @contextmanager

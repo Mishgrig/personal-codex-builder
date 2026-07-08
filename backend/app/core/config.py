@@ -21,7 +21,7 @@ class Settings(BaseModel):
     workspaces_dir: Path
     exports_dir: Path
     catalog_path: Path
-    workspace_schema_version: str = "1"
+    workspace_schema_version: str = "2"
     default_theme: str = "fantasy"
     cors_origins: list[str] = [
         "http://127.0.0.1:5173",

@@ -10,7 +10,16 @@ export function termLabel(card: CardListItem, category: string) {
   return card.taxonomy_terms.find((term) => term.category === category)?.label ?? "Uncategorized";
 }
 
-export function groupCards(cards: CardListItem[], filters: SearchFilters): CardGroup[] {
+export function groupCards(cards: CardListItem[], filters: SearchFilters, groupByCategory = true): CardGroup[] {
+  if (!groupByCategory) {
+    return [
+      {
+        key: "all-cards",
+        label: "All cards",
+        cards,
+      },
+    ];
+  }
   const category = filters.domain ? "type" : "domain";
   const groups = new Map<string, CardListItem[]>();
   for (const card of cards) {
@@ -34,4 +43,3 @@ export function termsByCategory(terms: TaxonomyTerm[]) {
     layer: terms.filter((term) => term.category === "layer"),
   };
 }
-

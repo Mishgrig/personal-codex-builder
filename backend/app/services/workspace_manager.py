@@ -12,9 +12,12 @@ from app.core.config import get_settings
 from app.core.db import create_workspace_schema, dispose_sqlite_handles, get_session_factory
 from app.core.exceptions import NotFoundError, ValidationAPIError
 from app.core.paths import (
+    LEGACY_WORKSPACE_METADATA_FILENAME,
     WORKSPACE_DB_FILENAME,
     WORKSPACE_METADATA_FILENAME,
+    WORKSPACE_ASSET_LIBRARY_VERSION,
     ensure_workspace_layout,
+    legacy_workspace_metadata_path,
     resolve_workspace_db_path,
     workspace_backups_dir,
     workspace_db_path,
@@ -33,8 +36,12 @@ from app.services.backup_service import (
     list_workspace_backups,
     restore_workspace_backup,
 )
-from app.services.export_service import create_workspace_export, extract_workspace_archive
-from app.services.integrity_service import inspect_workspace_health
+from app.services.export_service import (
+    create_workspace_export,
+    create_workspace_safety_export,
+    extract_workspace_archive,
+)
+from app.services.integrity_service import inspect_asset_health, inspect_workspace_health
 from app.services.seed_service import seed_workspace
 from app.storage.app_index import app_index_session, create_app_index_schema
 from app.storage.catalog import load_catalog
@@ -71,6 +78,7 @@ class WorkspaceManager:
         with app_index_session() as session:
             records = session.execute(select(AppWorkspace).order_by(AppWorkspace.id)).scalars().all()
             changed = False
+            changed = self._ensure_workspace_order(records) or changed
             for record in records:
                 changed = self._ensure_workspace_layout_for_record(record) or changed
                 changed = self._ensure_workspace_schema_current(record) or changed
@@ -91,7 +99,13 @@ class WorkspaceManager:
             if not include_archived:
                 statement = statement.where(AppWorkspace.archived.is_(False))
             records = session.execute(statement).scalars().all()
-        records.sort(key=lambda record: record.last_opened_at or record.created_at, reverse=True)
+        records.sort(
+            key=lambda record: (
+                record.archived,
+                record.sort_order,
+                -(record.last_opened_at or record.created_at).timestamp(),
+            )
+        )
         return [self._workspace_summary(record) for record in records if resolve_workspace_db_path(record.slug).exists()]
 
     def get_workspace_summary(self, slug: str) -> dict:
@@ -106,6 +120,7 @@ class WorkspaceManager:
             slug = self._next_slug(session, payload.name)
             created_at = _now()
             record = AppWorkspace(
+                sort_order=self._next_sort_order(session),
                 slug=slug,
                 name=payload.name,
                 description=payload.description,
@@ -143,6 +158,7 @@ class WorkspaceManager:
         self.bootstrap()
         db_path = resolve_workspace_db_path(slug)
         dispose_sqlite_handles(db_path)
+        safety_archive = create_workspace_safety_export(slug, reason="safety-delete")
         with app_index_session() as session:
             record = self._get_record_or_raise(session, slug)
             session.delete(record)
@@ -150,7 +166,7 @@ class WorkspaceManager:
         workspace_root = workspace_dir(slug)
         if workspace_root.exists():
             shutil.rmtree(workspace_root)
-        logger.info("Deleted workspace", extra={"slug": slug})
+        logger.info("Deleted workspace", extra={"slug": slug, "safety_archive": safety_archive["filename"]})
 
     def copy_workspace(self, slug: str, new_name: str) -> dict:
         self.bootstrap()
@@ -163,6 +179,7 @@ class WorkspaceManager:
             new_slug = self._next_slug(session, new_name)
             created_at = _now()
             copied = AppWorkspace(
+                sort_order=self._next_sort_order(session),
                 slug=new_slug,
                 name=new_name,
                 description=original.description,
@@ -335,6 +352,7 @@ class WorkspaceManager:
                 snapshot = self._workspace_snapshot(new_slug)
                 created_at = _parse_datetime(metadata.get("created_at"))
                 record = AppWorkspace(
+                    sort_order=self._next_sort_order(session),
                     slug=new_slug,
                     name=target_name,
                     description=snapshot["description"] if snapshot else metadata.get("description", ""),
@@ -370,6 +388,45 @@ class WorkspaceManager:
         if payload["last_backup_at"]:
             payload["last_backup_at"] = _parse_datetime(payload["last_backup_at"])
         return payload
+
+    def asset_health(self, slug: str) -> dict:
+        self.bootstrap()
+        self._require_workspace(slug)
+        payload = inspect_asset_health(slug)
+        payload["checked_at"] = _parse_datetime(payload["checked_at"])
+        return payload
+
+    def get_notebook(self, slug: str) -> dict:
+        self.bootstrap()
+        session = self.get_workspace_session(slug)
+        try:
+            settings = session.get(WorkspaceSetting, 1)
+            if not settings:
+                raise NotFoundError("Workspace settings were not found.", code="WORKSPACE_SETTINGS_NOT_FOUND")
+            notebook = settings.notebook_json or {}
+            return {
+                "body_json": notebook.get("body_json") or {"type": "doc", "content": []},
+                "body_text": notebook.get("body_text", ""),
+            }
+        finally:
+            session.close()
+
+    def update_notebook(self, slug: str, *, body_json: dict, body_text: str) -> dict:
+        self.bootstrap()
+        session = self.get_workspace_session(slug)
+        try:
+            settings = session.get(WorkspaceSetting, 1)
+            if not settings:
+                raise NotFoundError("Workspace settings were not found.", code="WORKSPACE_SETTINGS_NOT_FOUND")
+            settings.notebook_json = {
+                "body_json": body_json,
+                "body_text": body_text,
+            }
+            session.add(settings)
+            session.commit()
+        finally:
+            session.close()
+        return self.get_notebook(slug)
 
     def get_app_info(self) -> dict:
         self.bootstrap()
@@ -422,6 +479,20 @@ class WorkspaceManager:
             seed_demo=True,
         )
 
+    def reorder_workspaces(self, ordered_slugs: list[str]) -> None:
+        self.bootstrap()
+        if not ordered_slugs:
+            return
+        with app_index_session() as session:
+            records = session.execute(select(AppWorkspace)).scalars().all()
+            records_by_slug = {record.slug: record for record in records}
+            remaining = [record for record in records if record.slug not in ordered_slugs]
+            ordered_records = [records_by_slug[slug] for slug in ordered_slugs if slug in records_by_slug]
+            for index, record in enumerate([*ordered_records, *remaining]):
+                record.sort_order = index
+                session.add(record)
+            session.commit()
+
     def _seed_registry_if_needed(self) -> None:
         with app_index_session() as session:
             has_records = session.execute(select(func.count(AppWorkspace.id))).scalar() or 0
@@ -436,9 +507,10 @@ class WorkspaceManager:
             return
 
         with app_index_session() as session:
-            for payload in imported_records:
+            for index, payload in enumerate(imported_records):
                 session.add(
                     AppWorkspace(
+                        sort_order=payload.get("sort_order", index),
                         slug=payload["slug"],
                         name=payload["name"],
                         description=payload["description"],
@@ -466,6 +538,7 @@ class WorkspaceManager:
             slug = item["slug"]
             records.append(
                 {
+                    "sort_order": len(records),
                     "slug": slug,
                     "name": item["name"],
                     "description": item.get("description", ""),
@@ -495,12 +568,18 @@ class WorkspaceManager:
             ensure_workspace_layout(slug)
             metadata = load_workspace_metadata(slug) or {}
             snapshot = self._workspace_snapshot(slug)
-            if not snapshot and not workspace_db_path(slug).exists() and not workspace_metadata_path(slug).exists():
+            if (
+                not snapshot
+                and not workspace_db_path(slug).exists()
+                and not workspace_metadata_path(slug).exists()
+                and not legacy_workspace_metadata_path(slug).exists()
+            ):
                 continue
             created_at = metadata.get("created_at") or _now().isoformat()
             updated_at = metadata.get("updated_at") or created_at
             records.append(
                 {
+                    "sort_order": len(records),
                     "slug": slug,
                     "name": snapshot["name"] if snapshot else metadata.get("name", slug.replace("-", " ").title()),
                     "description": snapshot["description"] if snapshot else metadata.get("description", ""),
@@ -522,6 +601,9 @@ class WorkspaceManager:
         ensure_workspace_layout(record.slug)
         resolve_workspace_db_path(record.slug)
         changed = False
+        if record.sort_order < 0:
+            record.sort_order = 0
+            changed = True
         if record.path != workspace_relative_dir(record.slug):
             record.path = workspace_relative_dir(record.slug)
             changed = True
@@ -540,6 +622,7 @@ class WorkspaceManager:
         db_path = resolve_workspace_db_path(record.slug)
         if not db_path.exists():
             return False
+        create_workspace_schema(db_path)
         if record.schema_version == self.settings.workspace_schema_version:
             return False
         create_workspace_backup(
@@ -548,11 +631,31 @@ class WorkspaceManager:
             schema_version=record.schema_version,
             app_version=record.app_version,
         )
-        create_workspace_schema(db_path)
         record.schema_version = self.settings.workspace_schema_version
         record.app_version = self.settings.app_version
         record.updated_at = _now()
         logger.info("Synchronized workspace schema version", extra={"slug": record.slug})
+        return True
+
+    def _ensure_workspace_order(self, records: list[AppWorkspace]) -> bool:
+        if not records:
+            return False
+        seen = set()
+        needs_reset = False
+        for record in records:
+            if record.sort_order in seen:
+                needs_reset = True
+                break
+            seen.add(record.sort_order)
+        if not needs_reset:
+            return False
+        ordered = sorted(
+            records,
+            key=lambda record: (record.last_opened_at or record.created_at, record.created_at),
+            reverse=True,
+        )
+        for index, record in enumerate(ordered):
+            record.sort_order = index
         return True
 
     def _sync_record_from_snapshot(self, record: AppWorkspace, snapshot: dict[str, str]) -> bool:
@@ -612,21 +715,26 @@ class WorkspaceManager:
     def _write_workspace_metadata(self, record: AppWorkspace) -> None:
         save_workspace_metadata(
             record.slug,
-            {
-                "slug": record.slug,
-                "name": record.name,
-                "description": record.description,
-                "theme": record.theme,
-                "archived": record.archived,
-                "path": record.path,
-                "db_filename": record.db_filename,
-                "metadata_filename": record.metadata_filename,
-                "files_dir": workspace_files_dir(record.slug).name,
-                "backups_dir": workspace_backups_dir(record.slug).name,
-                "exports_dir": workspace_exports_dir(record.slug).name,
-                "schema_version": record.schema_version,
-                "app_version": record.app_version,
-                "created_at": record.created_at,
+                {
+                    "slug": record.slug,
+                    "name": record.name,
+                    "workspace_slug": record.slug,
+                    "workspace_name": record.name,
+                    "description": record.description,
+                    "theme": record.theme,
+                    "archived": record.archived,
+                    "path": record.path,
+                    "db_filename": record.db_filename,
+                    "metadata_filename": record.metadata_filename,
+                    "legacy_metadata_filename": LEGACY_WORKSPACE_METADATA_FILENAME,
+                    "files_dir": workspace_files_dir(record.slug).name,
+                    "backups_dir": workspace_backups_dir(record.slug).name,
+                    "exports_dir": workspace_exports_dir(record.slug).name,
+                    "asset_library_version": WORKSPACE_ASSET_LIBRARY_VERSION,
+                    "db_schema_version": record.schema_version,
+                    "schema_version": record.schema_version,
+                    "app_version": record.app_version,
+                    "created_at": record.created_at,
                 "updated_at": record.updated_at,
                 "last_opened_at": record.last_opened_at,
             },
@@ -658,6 +766,9 @@ class WorkspaceManager:
             suffix += 1
             slug = f"{base_slug}-{suffix}"
         return slug
+
+    def _next_sort_order(self, session: Session) -> int:
+        return (session.execute(select(func.max(AppWorkspace.sort_order))).scalar() or -1) + 1
 
     def _require_workspace(self, slug: str) -> AppWorkspace:
         with app_index_session() as session:

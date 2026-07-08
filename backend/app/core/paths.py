@@ -6,7 +6,9 @@ from app.core.config import get_settings
 
 WORKSPACE_DB_FILENAME = "workspace.sqlite"
 LEGACY_WORKSPACE_DB_FILENAME = "workspace.db"
-WORKSPACE_METADATA_FILENAME = "workspace.json"
+WORKSPACE_METADATA_FILENAME = "workspace_manifest.json"
+LEGACY_WORKSPACE_METADATA_FILENAME = "workspace.json"
+WORKSPACE_ASSET_LIBRARY_VERSION = "1"
 
 
 def app_index_path() -> Path:
@@ -33,6 +35,10 @@ def workspace_metadata_path(slug: str) -> Path:
     return workspace_dir(slug) / WORKSPACE_METADATA_FILENAME
 
 
+def legacy_workspace_metadata_path(slug: str) -> Path:
+    return workspace_dir(slug) / LEGACY_WORKSPACE_METADATA_FILENAME
+
+
 def workspace_files_dir(slug: str) -> Path:
     return workspace_dir(slug) / "files"
 
@@ -45,12 +51,17 @@ def workspace_exports_dir(slug: str) -> Path:
     return workspace_dir(slug) / "exports"
 
 
+def app_safety_backups_dir() -> Path:
+    return get_settings().data_dir / "safety-backups"
+
+
 def ensure_workspace_layout(slug: str) -> Path:
     root = workspace_dir(slug)
     root.mkdir(parents=True, exist_ok=True)
     workspace_files_dir(slug).mkdir(parents=True, exist_ok=True)
     workspace_backups_dir(slug).mkdir(parents=True, exist_ok=True)
     workspace_exports_dir(slug).mkdir(parents=True, exist_ok=True)
+    app_safety_backups_dir().mkdir(parents=True, exist_ok=True)
     return root
 
 

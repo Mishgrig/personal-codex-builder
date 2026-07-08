@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +40,10 @@ class WorkspaceCopy(BaseModel):
     name: str
 
 
+class WorkspaceReorderRequest(BaseModel):
+    ordered_slugs: list[str]
+
+
 class WorkspaceBackupRequest(BaseModel):
     reason: str = "manual"
 
@@ -70,6 +75,21 @@ class WorkspaceRestoreRead(BaseModel):
     safety_backup: WorkspaceBackupRead
 
 
+class WorkspaceHealthCheckRead(BaseModel):
+    key: str
+    category: str
+    status: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceHealthCategoryRead(BaseModel):
+    key: str
+    status: str
+    issue_count: int
+    checks: list[WorkspaceHealthCheckRead] = Field(default_factory=list)
+
+
 class WorkspaceHealthRead(BaseModel):
     workspace_slug: str
     checked_at: datetime
@@ -87,6 +107,66 @@ class WorkspaceHealthRead(BaseModel):
     last_backup_at: datetime | None = None
     schema_version: str
     app_version: str
+    issue_count: int = 0
+    checks: list[WorkspaceHealthCheckRead] = Field(default_factory=list)
+    categories: dict[str, WorkspaceHealthCategoryRead] = Field(default_factory=dict)
+
+
+class WorkspaceAssetHealthRead(BaseModel):
+    workspace_slug: str
+    checked_at: datetime
+    issue_count: int = 0
+    missing_asset_files: list[str] = Field(default_factory=list)
+    orphaned_files: list[str] = Field(default_factory=list)
+    duplicate_checksums: list[str] = Field(default_factory=list)
+    unused_assets: list[str] = Field(default_factory=list)
+    broken_cover_asset_ids: list[str] = Field(default_factory=list)
+    broken_gallery_links: list[str] = Field(default_factory=list)
+    broken_attachment_links: list[str] = Field(default_factory=list)
+    broken_source_links: list[str] = Field(default_factory=list)
+    checks: list[WorkspaceHealthCheckRead] = Field(default_factory=list)
+    categories: dict[str, WorkspaceHealthCategoryRead] = Field(default_factory=dict)
+
+
+class WorkspaceNotebookRead(BaseModel):
+    body_json: dict[str, Any] = Field(default_factory=dict)
+    body_text: str = ""
+
+
+class WorkspaceAssetUsageRead(BaseModel):
+    usage_type: str
+    label: str
+    card_id: int | None = None
+    asset_role: str = ""
+
+
+class WorkspaceAssetRead(BaseModel):
+    id: str
+    asset_type: str
+    original_filename: str
+    stored_filename: str
+    relative_path: str
+    mime_type: str
+    size_bytes: int
+    checksum_sha256: str
+    url: str
+    usage_count: int = 0
+    usages: list[WorkspaceAssetUsageRead] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkspaceAssetLibraryRead(BaseModel):
+    items: list[WorkspaceAssetRead] = Field(default_factory=list)
+    total: int = 0
+    q: str = ""
+    asset_type: str | None = None
+
+
+class WorkspaceAssetAttachRequest(BaseModel):
+    card_id: int
+    role: str = "gallery"
+    set_as_cover: bool = False
 
 
 class AppInfoRead(BaseModel):

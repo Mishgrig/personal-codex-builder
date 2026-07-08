@@ -38,6 +38,21 @@ export interface WorkspaceRestoreResult {
   safety_backup: WorkspaceBackup;
 }
 
+export interface WorkspaceHealthCheck {
+  key: string;
+  category: string;
+  status: string;
+  message: string;
+  details: Record<string, unknown>;
+}
+
+export interface WorkspaceHealthCategory {
+  key: string;
+  status: string;
+  issue_count: number;
+  checks: WorkspaceHealthCheck[];
+}
+
 export interface WorkspaceHealth {
   workspace_slug: string;
   checked_at: string;
@@ -55,6 +70,60 @@ export interface WorkspaceHealth {
   last_backup_at: string | null;
   schema_version: string;
   app_version: string;
+  issue_count: number;
+  checks: WorkspaceHealthCheck[];
+  categories: Record<string, WorkspaceHealthCategory>;
+}
+
+export interface WorkspaceAssetHealth {
+  workspace_slug: string;
+  checked_at: string;
+  issue_count: number;
+  missing_asset_files: string[];
+  orphaned_files: string[];
+  duplicate_checksums: string[];
+  unused_assets: string[];
+  broken_cover_asset_ids: string[];
+  broken_gallery_links: string[];
+  broken_attachment_links: string[];
+  broken_source_links: string[];
+  checks: WorkspaceHealthCheck[];
+  categories: Record<string, WorkspaceHealthCategory>;
+}
+
+export interface WorkspaceNotebook {
+  body_json: Record<string, unknown>;
+  body_text: string;
+}
+
+export interface WorkspaceAssetUsage {
+  usage_type: string;
+  label: string;
+  card_id: number | null;
+  asset_role: string;
+}
+
+export interface WorkspaceAsset {
+  id: string;
+  asset_type: string;
+  original_filename: string;
+  stored_filename: string;
+  relative_path: string;
+  mime_type: string;
+  size_bytes: number;
+  checksum_sha256: string;
+  url: string;
+  usage_count: number;
+  usages: WorkspaceAssetUsage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceAssetLibrary {
+  items: WorkspaceAsset[];
+  total: number;
+  q: string;
+  asset_type: string | null;
 }
 
 export interface AppInfo {
@@ -115,18 +184,125 @@ export interface CardSchema {
   updated_at: string;
 }
 
+export interface CardTypeField {
+  id: number;
+  card_type_slug: string;
+  name: string;
+  field_slug: string;
+  sql_column_name: string;
+  field_type: string;
+  required: boolean;
+  visible: boolean;
+  show_in_card: boolean;
+  show_in_atlas: boolean;
+  include_in_table_view: boolean;
+  include_in_export: boolean;
+  allow_import: boolean;
+  searchable: boolean;
+  filterable: boolean;
+  description: string;
+  help_text: string;
+  default_value_json: unknown;
+  options_json: Array<Record<string, unknown>>;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardTypeDefinition {
+  slug: string;
+  name: string;
+  table_name: string;
+  description: string;
+  icon: string;
+  is_active: boolean;
+  layout_json: Record<string, unknown>;
+  fields: CardTypeField[];
+  card_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CardTypeTableColumn {
+  field_slug: string;
+  sql_column_name: string;
+  name: string;
+  field_type: string;
+  required: boolean;
+  searchable: boolean;
+  filterable: boolean;
+}
+
+export interface CardTypeTableRow {
+  card_id: number;
+  registry_id: number | null;
+  title: string;
+  summary: string;
+  status: string;
+  values: Record<string, unknown>;
+}
+
+export interface CardTypeTable {
+  card_type: CardTypeDefinition;
+  columns: CardTypeTableColumn[];
+  rows: CardTypeTableRow[];
+  total: number;
+  q: string;
+}
+
+export interface CardTypeStructureExport {
+  card_type_slug: string;
+  format: string;
+  filename: string;
+  content_text: string;
+  content_json: Array<Record<string, unknown>>;
+  content_base64: string;
+}
+
+export interface CardTypeImportPreview {
+  card_type_slug: string;
+  format: string;
+  row_count: number;
+  missing_columns: string[];
+  unknown_columns: string[];
+  matched_columns: Record<string, string>;
+  sample_rows: Array<Record<string, unknown>>;
+}
+
+export interface CardTypeImportResult {
+  card_type_slug: string;
+  format: string;
+  rows_created: number;
+  rows_updated: number;
+  rows_skipped: number;
+  errors: string[];
+  missing_columns: string[];
+  unknown_columns: string[];
+}
+
+export interface CardTypeTableExport {
+  card_type_slug: string;
+  format: string;
+  filename: string;
+  content_text: string;
+  content_json: Array<Record<string, unknown>>;
+  content_base64: string;
+}
+
 export interface CardSource {
   id: number;
   title: string;
   url: string;
   note: string;
   source_type: string;
+  assets: CardAsset[];
   created_at: string;
   updated_at: string;
 }
 
 export interface CardAsset {
-  id: number;
+  id: number | string;
   kind: "gallery" | "attachment" | string;
   stored_path: string;
   original_name: string;
@@ -145,6 +321,7 @@ export interface CardRelation {
   target_uid: string;
   target_slug: string;
   target_title: string;
+  relation_type: string;
   note: string;
 }
 
@@ -161,6 +338,7 @@ export interface CardListItem {
   taxonomy_terms: TaxonomyTerm[];
   mention_count: number;
   cover_url: string | null;
+  cover_asset_id?: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -204,6 +382,7 @@ export interface CardUpdatePayload {
   summary?: string;
   status?: string;
   schema_id?: string | null;
+  cover_asset_id?: string | null;
   body_json?: Record<string, unknown>;
   dynamic_fields?: Record<string, unknown>;
   taxonomy_term_ids?: number[];

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -84,19 +86,141 @@ def test_bootstrap_migrates_legacy_workspace_db(tmp_path: Path, monkeypatch) -> 
         manager = WorkspaceManager()
         manager.bootstrap()
 
-        metadata = json.loads((workspace_root / "workspace.json").read_text(encoding="utf-8"))
+        metadata = json.loads((workspace_root / "workspace_manifest.json").read_text(encoding="utf-8"))
+        legacy_metadata = json.loads((workspace_root / "workspace.json").read_text(encoding="utf-8"))
         summaries = manager.list_workspaces()
 
         assert settings.app_index_path.exists()
         assert (workspace_root / "workspace.sqlite").exists()
         assert not legacy_db_path.exists()
+        assert (workspace_root / "workspace_manifest.json").exists()
         assert (workspace_root / "workspace.json").exists()
         assert (workspace_root / "files").exists()
         assert (workspace_root / "backups").exists()
         assert (workspace_root / "exports").exists()
         assert metadata["db_filename"] == "workspace.sqlite"
-        assert metadata["metadata_filename"] == "workspace.json"
+        assert metadata["metadata_filename"] == "workspace_manifest.json"
+        assert metadata["legacy_metadata_filename"] == "workspace.json"
+        assert metadata["asset_library_version"] == "1"
+        assert legacy_metadata["metadata_filename"] == "workspace_manifest.json"
         assert summaries[0]["slug"] == slug
         assert summaries[0]["name"] == "Legacy Atlas"
+    finally:
+        _reset_runtime_state()
+
+
+def test_delete_workspace_creates_safety_archive(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "delete-data"
+    monkeypatch.setenv("CODEX_DATA_DIR", str(data_dir))
+    _reset_runtime_state()
+
+    try:
+        from app.core.config import get_settings
+        from app.schemas.workspace import WorkspaceCreate
+        from app.services.workspace_manager import WorkspaceManager
+
+        manager = WorkspaceManager()
+        created = manager.create_workspace(WorkspaceCreate(name="Delete Me", description="Disposable", theme="fantasy"))
+        slug = created["slug"]
+        workspace_root = get_settings().workspaces_dir / slug
+
+        (workspace_root / "files" / "note.txt").write_text("local attachment", encoding="utf-8")
+
+        manager.delete_workspace(slug)
+
+        safety_dir = data_dir / "safety-backups"
+        archives = sorted(safety_dir.glob("*.workspace.zip"))
+
+        assert not workspace_root.exists()
+        assert archives
+
+        with zipfile.ZipFile(archives[0]) as archive:
+            members = set(archive.namelist())
+
+        assert "workspace.sqlite" in members
+        assert "workspace_manifest.json" in members
+        assert "workspace.json" in members
+        assert "files/note.txt" in members
+    finally:
+        _reset_runtime_state()
+
+
+def test_bootstrap_adds_missing_workspace_settings_columns(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "migration-data"
+    monkeypatch.setenv("CODEX_DATA_DIR", str(data_dir))
+    _reset_runtime_state()
+
+    try:
+        from app.core.config import get_settings
+        from app.services.workspace_manager import WorkspaceManager
+
+        settings = get_settings()
+        slug = "legacy-columns"
+        workspace_root = settings.workspaces_dir / slug
+        workspace_root.mkdir(parents=True, exist_ok=True)
+        db_path = workspace_root / "workspace.sqlite"
+
+        connection = sqlite3.connect(db_path)
+        try:
+            connection.execute(
+                """
+                CREATE TABLE workspace_settings (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    theme TEXT NOT NULL DEFAULT 'fantasy',
+                    logo_path TEXT,
+                    taxonomy_labels TEXT NOT NULL DEFAULT '{}',
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO workspace_settings (id, name, description, theme, logo_path, taxonomy_labels, created_at, updated_at)
+                VALUES (1, 'Legacy Columns', 'Old workspace', 'fantasy', NULL, '{}', '2026-07-08T00:00:00+00:00', '2026-07-08T00:00:00+00:00')
+                """
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        created_at = datetime.now(timezone.utc).isoformat()
+        settings.catalog_path.write_text(
+            json.dumps(
+                {
+                    "workspaces": [
+                        {
+                            "slug": slug,
+                            "name": "Legacy Columns",
+                            "description": "Old workspace",
+                            "theme": "fantasy",
+                            "created_at": created_at,
+                            "updated_at": created_at,
+                        }
+                    ],
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        manager = WorkspaceManager()
+        manager.bootstrap()
+        summaries = manager.list_workspaces()
+
+        migrated = sqlite3.connect(db_path)
+        try:
+            columns = {row[1] for row in migrated.execute("PRAGMA table_info(workspace_settings)").fetchall()}
+        finally:
+            migrated.close()
+
+        assert "ui_preferences" in columns
+        assert "notebook_json" in columns
+        assert summaries[0]["slug"] == slug
     finally:
         _reset_runtime_state()

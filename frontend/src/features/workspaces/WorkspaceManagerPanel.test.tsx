@@ -17,6 +17,29 @@ function makeProps() {
       default_theme: "fantasy",
     },
     backendStatus: "ok",
+    workspaces: [
+      {
+        slug: "personal",
+        name: "Personal",
+        description: "Local codex",
+        theme: "fantasy",
+        archived: false,
+        logo_url: null,
+        card_count: 12,
+        path: "workspaces/personal",
+        last_opened_at: "2026-07-03T10:00:00Z",
+        backup_count: 2,
+        last_backup_at: "2026-07-03T10:10:00Z",
+        created_at: "2026-07-03T09:00:00Z",
+        updated_at: "2026-07-03T10:10:00Z",
+        taxonomy_labels: {
+          domain: "Domain",
+          type: "Type",
+          subtype: "Subtype",
+          layer: "Layer",
+        },
+      },
+    ],
     activeWorkspace: {
       slug: "personal",
       name: "Personal",
@@ -38,6 +61,7 @@ function makeProps() {
         layer: "Layer",
       },
     },
+    selectedCard: null,
     archivedWorkspaces: [
       {
         slug: "archive",
@@ -90,9 +114,81 @@ function makeProps() {
       last_backup_at: "2026-07-03T10:10:00Z",
       schema_version: "1",
       app_version: "0.1.0",
+      issue_count: 0,
+      checks: [
+        {
+          key: "sqlite_integrity",
+          category: "database",
+          status: "ok",
+          message: "SQLite integrity check passed.",
+          details: { integrity_message: "ok" },
+        },
+      ],
+      categories: {
+        database: {
+          key: "database",
+          status: "ok",
+          issue_count: 0,
+          checks: [
+            {
+              key: "sqlite_integrity",
+              category: "database",
+              status: "ok",
+              message: "SQLite integrity check passed.",
+              details: { integrity_message: "ok" },
+            },
+          ],
+        },
+      },
     },
+    assetHealth: {
+      workspace_slug: "personal",
+      checked_at: "2026-07-03T10:11:00Z",
+      issue_count: 0,
+      missing_asset_files: [],
+      orphaned_files: [],
+      duplicate_checksums: [],
+      unused_assets: [],
+      broken_cover_asset_ids: [],
+      broken_gallery_links: [],
+      broken_attachment_links: [],
+      broken_source_links: [],
+      checks: [],
+      categories: {},
+    },
+    assets: [
+      {
+        id: "img-a83k2d",
+        asset_type: "images",
+        original_filename: "Dragon Map.png",
+        stored_filename: "img-a83k2d.png",
+        relative_path: "workspaces/personal/assets/images/img-a83k2d.png",
+        mime_type: "image/png",
+        size_bytes: 2048,
+        checksum_sha256: "abc123",
+        url: "/media/workspaces/personal/assets/images/img-a83k2d.png",
+        usage_count: 1,
+        usages: [{ usage_type: "card", label: "Dragon of the North", card_id: 7, asset_role: "gallery" }],
+        created_at: "2026-07-03T10:11:00Z",
+        updated_at: "2026-07-03T10:11:00Z",
+      },
+    ],
     message: "Backup created successfully.",
     busy: false,
+    assetLibraryQuery: "",
+    assetLibraryType: "",
+    onClose: vi.fn(),
+    onSelectWorkspace: vi.fn(),
+    onCreateWorkspace: vi.fn().mockResolvedValue(undefined),
+    onReorderWorkspaces: vi.fn().mockResolvedValue(undefined),
+    onAssetLibraryQueryChange: vi.fn(),
+    onAssetLibraryTypeChange: vi.fn(),
+    onAttachAsset: vi.fn().mockResolvedValue(undefined),
+    onAttachSourceAsset: vi.fn().mockResolvedValue(undefined),
+    onDeleteAsset: vi.fn().mockResolvedValue(undefined),
+    onRenameWorkspace: vi.fn().mockResolvedValue(undefined),
+    onDuplicateWorkspace: vi.fn().mockResolvedValue(undefined),
+    onDeleteWorkspace: vi.fn().mockResolvedValue(undefined),
     onCreateBackup: vi.fn().mockResolvedValue(undefined),
     onExportWorkspace: vi.fn().mockResolvedValue(undefined),
     onArchiveWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -109,11 +205,15 @@ describe("WorkspaceManagerPanel", () => {
     render(<WorkspaceManagerPanel {...props} />);
 
     expect(screen.getByText("Local Status")).toBeInTheDocument();
-    expect(screen.getByText("Workspace Operations")).toBeInTheDocument();
+    expect(screen.getAllByText("Manage databases")[0]).toBeInTheDocument();
+    expect(screen.getByText("Databases")).toBeInTheDocument();
     expect(screen.getByText("Data Health")).toBeInTheDocument();
+    expect(screen.getByText("Asset Library")).toBeInTheDocument();
     expect(screen.getByText("Backup Manager")).toBeInTheDocument();
     expect(screen.getByText("Backup created successfully.")).toBeInTheDocument();
     expect(screen.getByText("Archive workspace")).toBeInTheDocument();
+    expect(screen.getByText("Save database details")).toBeInTheDocument();
+    expect(screen.getByText("Duplicate database")).toBeInTheDocument();
   });
 
   it("invokes backup and restore actions", () => {
@@ -134,15 +234,17 @@ describe("WorkspaceManagerPanel", () => {
     render(
       <WorkspaceManagerPanel
         {...props}
+        workspaces={[]}
         activeWorkspace={null}
         backups={[]}
         health={null}
+        assetHealth={null}
         message={null}
       />,
     );
 
     expect(
-      screen.getByText("Create a new workspace or unarchive an existing one to continue working locally."),
+      screen.getByText("Create a new database or unarchive an older one to start working."),
     ).toBeInTheDocument();
     expect(screen.getByText("No backups yet")).toBeInTheDocument();
   });

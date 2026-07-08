@@ -6,8 +6,9 @@ Personal Codex Builder is a local-first single-user atlas for personal knowledge
 
 - FastAPI backend with per-workspace SQLite databases
 - React + TypeScript + Vite frontend
-- Explicit workspace management with local backups, health checks, import/export, and archive support
-- Search, schemas, taxonomy, attachments, relations, and rich text editing
+- Explicit workspace management with local backups, health checks, import/export, archive support, and safety backups before destructive flows
+- Atlas and Table View screens for browsing and editing card data
+- Card Type Studio, category/tag filters, centralized Asset Library, workspace Notebook, relations, and rich text editing
 - Local runtime storage under `data/` that stays on the machine
 
 ## Project structure
@@ -29,11 +30,15 @@ Each workspace is a local container:
 ```text
 data/workspaces/<workspace-slug>/
   workspace.sqlite
-  workspace.json
+  workspace_manifest.json
+  workspace.json                  # compatibility metadata during transition
+  assets/
   files/
   backups/
   exports/
 ```
+
+Global app metadata lives separately in `data/app_index.sqlite`.
 
 ## Setup
 
@@ -121,5 +126,6 @@ GitHub contains source code and documentation only.
 
 - The global workspace registry now lives in the local app index database.
 - Workspace business data stays isolated inside each workspace database.
+- Existing local workspaces are migrated forward with additive SQLite schema repair on startup.
 - `backend/alembic` remains a migration scaffold for future schema evolution.
 - See [docs/AI_REVIEW_CONTEXT.md](./docs/AI_REVIEW_CONTEXT.md) for future ChatGPT and GitHub review context.

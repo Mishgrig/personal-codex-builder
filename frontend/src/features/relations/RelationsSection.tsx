@@ -2,16 +2,25 @@ import { useState } from "react";
 import { Link2, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type { CardDetail, CardListItem } from "../../types/models";
+import { IconButton } from "../../shared/components/IconButton";
 
 interface RelationsSectionProps {
   workspaceSlug: string;
   card: CardDetail;
   candidates: CardListItem[];
   onUpdated: (card: CardDetail) => void;
+  onOpenCard: (cardId: number) => void;
 }
 
-export function RelationsSection({ workspaceSlug, card, candidates, onUpdated }: RelationsSectionProps) {
+export function RelationsSection({
+  workspaceSlug,
+  card,
+  candidates,
+  onUpdated,
+  onOpenCard,
+}: RelationsSectionProps) {
   const [targetCardId, setTargetCardId] = useState<number | null>(null);
+  const [relationType, setRelationType] = useState("one-to-one");
   const [note, setNote] = useState("");
   const available = candidates.filter((item) => item.id !== card.id);
 
@@ -23,14 +32,13 @@ export function RelationsSection({ workspaceSlug, card, candidates, onUpdated }:
       <div className="relation-list">
         {card.relations.map((relation) => (
           <div className="relation-row" key={relation.id}>
-            <div>
+            <button className="relation-pill" onClick={() => onOpenCard(relation.target_card_id)}>
+              <span className="relation-type-badge">{relation.relation_type}</span>
               <strong>{relation.target_title}</strong>
-              <p>
-                {relation.target_slug} · {relation.note || "linked"}
-              </p>
-            </div>
-            <button
-              className="icon-button danger"
+              <p>{relation.note || relation.target_slug}</p>
+            </button>
+            <IconButton
+              danger
               title="Remove relation"
               onClick={async () => {
                 const updated = await api.deleteRelation(workspaceSlug, relation.id, card.id);
@@ -38,7 +46,7 @@ export function RelationsSection({ workspaceSlug, card, candidates, onUpdated }:
               }}
             >
               <Trash2 size={14} />
-            </button>
+            </IconButton>
           </div>
         ))}
       </div>
@@ -53,7 +61,16 @@ export function RelationsSection({ workspaceSlug, card, candidates, onUpdated }:
             <option key={candidate.id} value={candidate.id}>
               {candidate.title}
             </option>
-          ))}
+            ))}
+        </select>
+        <select
+          className="mini-select"
+          value={relationType}
+          onChange={(event) => setRelationType(event.target.value)}
+        >
+          <option value="one-to-one">one-to-one</option>
+          <option value="one-to-many">one-to-many</option>
+          <option value="many-to-one">many-to-one</option>
         </select>
         <input
           className="themed-input"
@@ -67,8 +84,9 @@ export function RelationsSection({ workspaceSlug, card, candidates, onUpdated }:
             if (!targetCardId) {
               return;
             }
-            const updated = await api.addRelation(workspaceSlug, card.id, targetCardId, note);
+            const updated = await api.addRelation(workspaceSlug, card.id, targetCardId, relationType, note);
             setTargetCardId(null);
+            setRelationType("one-to-one");
             setNote("");
             onUpdated(updated);
           }}
@@ -80,4 +98,3 @@ export function RelationsSection({ workspaceSlug, card, candidates, onUpdated }:
     </section>
   );
 }
-

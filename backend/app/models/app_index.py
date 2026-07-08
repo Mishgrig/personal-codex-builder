@@ -18,13 +18,14 @@ class AppWorkspace(AppIndexBase, TimestampMixin):
     __tablename__ = "workspaces"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     slug: Mapped[str] = mapped_column(String(80), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     theme: Mapped[str] = mapped_column(String(32), default="fantasy", nullable=False)
     path: Mapped[str] = mapped_column(String(255), nullable=False)
     db_filename: Mapped[str] = mapped_column(String(64), default="workspace.sqlite", nullable=False)
-    metadata_filename: Mapped[str] = mapped_column(String(64), default="workspace.json", nullable=False)
+    metadata_filename: Mapped[str] = mapped_column(String(64), default="workspace_manifest.json", nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     schema_version: Mapped[str] = mapped_column(String(32), default="1", nullable=False)
     app_version: Mapped[str] = mapped_column(String(32), default="0.1.0", nullable=False)

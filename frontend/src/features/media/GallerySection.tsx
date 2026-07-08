@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Download, Expand, ImagePlus, Trash2 } from "lucide-react";
+import { Download, Expand, ImagePlus, Star, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import type { CardAsset, CardDetail } from "../../types/models";
+import { IconButton } from "../../shared/components/IconButton";
 
 interface GallerySectionProps {
   workspaceSlug: string;
@@ -72,8 +73,19 @@ export function GallerySection({ workspaceSlug, card, onUpdated }: GallerySectio
             <a className="icon-button" href={selectedAsset.url} download={selectedAsset.original_name} title="Download image">
               <Download size={15} />
             </a>
-            <button
-              className="icon-button danger"
+            <IconButton
+              title="Use as cover"
+              onClick={async () => {
+                const updated = await api.updateCard(workspaceSlug, card.id, {
+                  cover_asset_id: String(selectedAsset.id),
+                });
+                onUpdated(updated);
+              }}
+            >
+              <Star size={15} />
+            </IconButton>
+            <IconButton
+              danger
               title="Delete image"
               onClick={async () => {
                 const updated = await api.deleteAsset(workspaceSlug, selectedAsset.id, card.id);
@@ -81,8 +93,11 @@ export function GallerySection({ workspaceSlug, card, onUpdated }: GallerySectio
               }}
             >
               <Trash2 size={15} />
-            </button>
+            </IconButton>
           </div>
+          <p className="asset-caption">
+            {selectedAsset.original_name} · asset {selectedAsset.id}
+          </p>
         </div>
       ) : (
         <div className="empty-block">Add artwork, covers, maps or references here.</div>
@@ -97,7 +112,7 @@ export function GallerySection({ workspaceSlug, card, onUpdated }: GallerySectio
                   key={asset.id}
                   asset={asset}
                   active={selectedAsset?.id === asset.id}
-                  cover={index === 0}
+                  cover={String(card.cover_asset_id ?? "") === String(asset.id)}
                   onSelect={() => setSelectedIndex(index)}
                 />
               ))}
@@ -135,4 +150,3 @@ function GalleryThumb({
     </button>
   );
 }
-

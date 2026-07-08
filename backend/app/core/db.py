@@ -57,10 +57,66 @@ def dispose_sqlite_handles(db_path: Path) -> None:
         engine.dispose()
 
 
+def _table_columns(connection, table_name: str) -> set[str]:
+    return {
+        row[1]
+        for row in connection.execute(text(f'PRAGMA table_info("{table_name}")')).all()
+    }
+
+
+def _ensure_table_columns(connection, table_name: str, columns: dict[str, str]) -> None:
+    existing = _table_columns(connection, table_name)
+    for column_name, column_sql in columns.items():
+        if column_name in existing:
+            continue
+        connection.execute(
+            text(
+                f'ALTER TABLE "{table_name}" ADD COLUMN "{column_name}" {column_sql}'
+            )
+        )
+
+
 def create_workspace_schema(db_path: Path) -> None:
     engine = get_engine(db_path)
     Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
+        _ensure_table_columns(
+            connection,
+            "workspace_settings",
+            {
+                "taxonomy_labels": "JSON NOT NULL DEFAULT '{}'",
+                "ui_preferences": "JSON NOT NULL DEFAULT '{}'",
+                "notebook_json": "JSON NOT NULL DEFAULT '{}'",
+            },
+        )
+        _ensure_table_columns(
+            connection,
+            "cards",
+            {
+                "body_json": "JSON NOT NULL DEFAULT '{}'",
+                "body_text": "TEXT NOT NULL DEFAULT ''",
+                "dynamic_fields": "JSON NOT NULL DEFAULT '{}'",
+                "sort_order": "REAL NOT NULL DEFAULT 0",
+                "cover_asset_id": "TEXT",
+            },
+        )
+        _ensure_table_columns(
+            connection,
+            "card_relations",
+            {
+                "relation_type": "TEXT NOT NULL DEFAULT 'one-to-one'",
+                "note": "TEXT NOT NULL DEFAULT ''",
+            },
+        )
+        _ensure_table_columns(
+            connection,
+            "card_sources",
+            {
+                "url": "TEXT NOT NULL DEFAULT ''",
+                "note": "TEXT NOT NULL DEFAULT ''",
+                "source_type": "TEXT NOT NULL DEFAULT 'web_page'",
+            },
+        )
         connection.execute(
             text(
                 """
@@ -73,6 +129,25 @@ def create_workspace_schema(db_path: Path) -> None:
                     taxonomy_text,
                     source_text,
                     attachment_text
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE VIRTUAL TABLE IF NOT EXISTS card_search_index
+                USING fts5(
+                    card_id UNINDEXED,
+                    card_type_slug,
+                    title,
+                    summary,
+                    body_plain_text,
+                    custom_fields_plain_text,
+                    categories_plain_text,
+                    sources_plain_text,
+                    relations_plain_text,
+                    combined_plain_text
                 )
                 """
             )

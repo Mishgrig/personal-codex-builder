@@ -4,15 +4,24 @@ import type {
   CardCreatePayload,
   CardDetail,
   CardSchema,
+  CardTypeDefinition,
+  CardTypeImportPreview,
+  CardTypeImportResult,
+  CardTypeStructureExport,
+  CardTypeTableExport,
+  CardTypeTable,
   CardSource,
   CardUpdatePayload,
   SearchFilters,
   SearchResult,
   TaxonomyTerm,
+  WorkspaceAssetLibrary,
   WorkspaceBackup,
   WorkspaceCreatePayload,
+  WorkspaceAssetHealth,
   WorkspaceExport,
   WorkspaceHealth,
+  WorkspaceNotebook,
   WorkspaceRestoreResult,
   WorkspaceSummary,
 } from "../types/models";
@@ -56,6 +65,11 @@ export const api = {
     request<WorkspaceSummary>(`/workspaces/${workspaceSlug}/open`, { method: "POST" }),
   createWorkspace: (payload: WorkspaceCreatePayload) =>
     request<WorkspaceSummary>("/workspaces", { method: "POST", json: payload }),
+  reorderWorkspaces: (orderedSlugs: string[]) =>
+    request<ActionStatus>("/workspaces/reorder", {
+      method: "POST",
+      json: { ordered_slugs: orderedSlugs },
+    }),
   importWorkspace: (file: File, name?: string) => {
     const form = new FormData();
     form.append("upload", file);
@@ -116,6 +130,33 @@ export const api = {
     }),
   getWorkspaceHealth: (workspaceSlug: string) =>
     request<WorkspaceHealth>(`/workspaces/${workspaceSlug}/health`),
+  getWorkspaceAssetHealth: (workspaceSlug: string) =>
+    request<WorkspaceAssetHealth>(`/workspaces/${workspaceSlug}/asset-health`),
+  listWorkspaceAssets: (workspaceSlug: string, q = "", assetType?: string) => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    if (assetType) params.set("asset_type", assetType);
+    const query = params.toString();
+    return request<WorkspaceAssetLibrary>(`/workspaces/${workspaceSlug}/assets${query ? `?${query}` : ""}`);
+  },
+  attachWorkspaceAsset: (
+    workspaceSlug: string,
+    assetId: string,
+    payload: { card_id: number; role: "gallery" | "attachment"; set_as_cover?: boolean },
+  ) =>
+    request<ActionStatus>(`/workspaces/${workspaceSlug}/assets/${assetId}/attach`, {
+      method: "POST",
+      json: payload,
+    }),
+  deleteWorkspaceAsset: (workspaceSlug: string, assetId: string) =>
+    request<ActionStatus>(`/workspaces/${workspaceSlug}/assets/${assetId}`, { method: "DELETE" }),
+  getWorkspaceNotebook: (workspaceSlug: string) =>
+    request<WorkspaceNotebook>(`/workspaces/${workspaceSlug}/notebook`),
+  updateWorkspaceNotebook: (workspaceSlug: string, payload: WorkspaceNotebook) =>
+    request<WorkspaceNotebook>(`/workspaces/${workspaceSlug}/notebook`, {
+      method: "PATCH",
+      json: payload,
+    }),
   listTaxonomy: (workspaceSlug: string) =>
     request<TaxonomyTerm[]>(`/workspaces/${workspaceSlug}/taxonomy`),
   createTaxonomyTerm: (workspaceSlug: string, payload: Partial<TaxonomyTerm> & { category: string; slug: string; label: string }) =>
@@ -128,6 +169,48 @@ export const api = {
     request<CardSchema[]>(`/workspaces/${workspaceSlug}/schemas`),
   putSchema: (workspaceSlug: string, schema: CardSchema) =>
     request<CardSchema>(`/workspaces/${workspaceSlug}/schemas/${schema.id}`, { method: "PUT", json: schema }),
+  listCardTypes: (workspaceSlug: string) =>
+    request<CardTypeDefinition[]>(`/workspaces/${workspaceSlug}/card-types`),
+  getCardTypeTable: (workspaceSlug: string, cardTypeSlug: string, q = "") => {
+    const params = new URLSearchParams();
+    if (q) params.set("q", q);
+    const query = params.toString();
+    return request<CardTypeTable>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/table${query ? `?${query}` : ""}`,
+    );
+  },
+  exportCardTypeStructure: (workspaceSlug: string, cardTypeSlug: string, format: "json" | "csv" | "xlsx" = "json") =>
+    request<CardTypeStructureExport>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/structure-export?format=${format}`,
+    ),
+  exportCardTypeTable: (workspaceSlug: string, cardTypeSlug: string, format: "json" | "csv" | "xlsx" = "json", q = "") =>
+    request<CardTypeTableExport>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/table-export?format=${format}${q ? `&q=${encodeURIComponent(q)}` : ""}`,
+    ),
+  previewCardTypeImport: (
+    workspaceSlug: string,
+    cardTypeSlug: string,
+    format: "csv" | "json" | "xlsx",
+    contentText: string,
+    contentBase64 = "",
+    filename = "",
+  ) =>
+    request<CardTypeImportPreview>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/import-preview`,
+      { method: "POST", json: { format, content_text: contentText, content_base64: contentBase64, filename } },
+    ),
+  applyCardTypeImport: (
+    workspaceSlug: string,
+    cardTypeSlug: string,
+    format: "csv" | "json" | "xlsx",
+    contentText: string,
+    contentBase64 = "",
+    filename = "",
+  ) =>
+    request<CardTypeImportResult>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/import-apply`,
+      { method: "POST", json: { format, content_text: contentText, content_base64: contentBase64, filename } },
+    ),
   searchCards: (workspaceSlug: string, filters: SearchFilters, q: string, sort: string) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
@@ -151,22 +234,45 @@ export const api = {
       method: "POST",
       json: { ordered_ids: orderedIds },
     }),
-  addSource: (workspaceSlug: string, cardId: number, payload: Omit<CardSource, "id" | "created_at" | "updated_at">) =>
+  addSource: (workspaceSlug: string, cardId: number, payload: Omit<CardSource, "id" | "assets" | "created_at" | "updated_at">) =>
     request<CardSource>(`/workspaces/${workspaceSlug}/cards/${cardId}/sources`, {
       method: "POST",
       json: payload,
     }),
-  updateSource: (workspaceSlug: string, sourceId: number, payload: Omit<CardSource, "id" | "created_at" | "updated_at">) =>
+  updateSource: (workspaceSlug: string, sourceId: number, payload: Omit<CardSource, "id" | "assets" | "created_at" | "updated_at">) =>
     request<CardSource>(`/workspaces/${workspaceSlug}/cards/sources/${sourceId}`, {
       method: "PUT",
       json: payload,
     }),
   deleteSource: (workspaceSlug: string, sourceId: number) =>
     request<ActionStatus>(`/workspaces/${workspaceSlug}/cards/sources/${sourceId}`, { method: "DELETE" }),
-  addRelation: (workspaceSlug: string, cardId: number, targetCardId: number, note = "") =>
+  uploadSourceAsset: (workspaceSlug: string, sourceId: number, file: File) => {
+    const form = new FormData();
+    form.append("upload", file);
+    return request<CardDetail>(`/workspaces/${workspaceSlug}/cards/sources/${sourceId}/assets`, {
+      method: "POST",
+      body: form,
+    });
+  },
+  attachExistingSourceAsset: (workspaceSlug: string, sourceId: number, assetId: string) =>
+    request<CardDetail>(`/workspaces/${workspaceSlug}/cards/sources/${sourceId}/assets/${assetId}`, {
+      method: "POST",
+    }),
+  deleteSourceAsset: (workspaceSlug: string, sourceId: number, assetId: string) =>
+    request<CardDetail>(
+      `/workspaces/${workspaceSlug}/cards/sources/assets/${assetId}?source_id=${sourceId}`,
+      { method: "DELETE" },
+    ),
+  addRelation: (
+    workspaceSlug: string,
+    cardId: number,
+    targetCardId: number,
+    relationType = "one-to-one",
+    note = "",
+  ) =>
     request<CardDetail>(`/workspaces/${workspaceSlug}/cards/${cardId}/relations`, {
       method: "POST",
-      json: { target_card_id: targetCardId, note },
+      json: { target_card_id: targetCardId, relation_type: relationType, note },
     }),
   deleteRelation: (workspaceSlug: string, relationId: number, cardId: number) =>
     request<CardDetail>(`/workspaces/${workspaceSlug}/cards/relations/${relationId}?card_id=${cardId}`, {
@@ -180,11 +286,11 @@ export const api = {
       body: form,
     });
   },
-  deleteAsset: (workspaceSlug: string, assetId: number, cardId: number) =>
+  deleteAsset: (workspaceSlug: string, assetId: number | string, cardId: number) =>
     request<CardDetail>(`/workspaces/${workspaceSlug}/cards/assets/${assetId}?card_id=${cardId}`, {
       method: "DELETE",
     }),
-  reorderGallery: (workspaceSlug: string, cardId: number, orderedIds: number[]) =>
+  reorderGallery: (workspaceSlug: string, cardId: number, orderedIds: Array<number | string>) =>
     request<CardDetail>(`/workspaces/${workspaceSlug}/cards/${cardId}/gallery/reorder`, {
       method: "POST",
       json: { ordered_ids: orderedIds },

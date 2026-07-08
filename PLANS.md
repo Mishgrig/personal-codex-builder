@@ -53,15 +53,16 @@ Current state:
 
 - FastAPI backend code lives under `backend/app`.
 - React plus TypeScript plus Vite frontend code lives under `frontend/src`.
-- Each workspace already has its own SQLite database under `data/workspaces/<slug>/workspace.db`.
-- Workspace files already live under `data/workspaces/<slug>/files/`.
-- Workspace registry metadata currently lives in `data/workspaces/catalog.json`.
-- Workspace scope is passed from frontend to backend today through the `X-Workspace-Slug` header.
+- Each workspace already has its own SQLite database under `data/workspaces/<slug>/workspace.sqlite`.
+- Workspace metadata lives beside the database as `workspace_manifest.json`, with legacy `workspace.json` compatibility still supported.
+- Workspace-local assets, backups, and exports already live inside each workspace folder.
+- Global workspace registry metadata already lives in `data/app_index.sqlite`.
+- Workspace scope is explicit on the current API surface through `/api/workspaces/{workspace_slug}/...` routes.
 
 Target direction from the project improvement report:
 
-- move global workspace registry metadata into `data/app_index.sqlite`;
-- introduce a dedicated `WorkspaceManager` service;
+- keep global workspace registry metadata in `data/app_index.sqlite` and evolve its abstractions as needed;
+- continue consolidating lifecycle behavior inside the dedicated `WorkspaceManager` service;
 - treat each workspace as a portable container with workspace-local database, metadata, files, backups, and exports;
 - add backup, restore, import, export, and integrity-check capabilities;
 - make API success and error shapes consistent;

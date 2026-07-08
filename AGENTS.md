@@ -8,10 +8,10 @@ The product already has a useful foundation:
 
 - the backend lives in `backend/app` and uses FastAPI plus SQLite;
 - the frontend lives in `frontend/src` and uses React, TypeScript, and Vite;
-- each workspace already has its own SQLite file under `data/workspaces/<slug>/workspace.db`;
-- each workspace already stores files under its own folder in `data/workspaces/<slug>/files/`.
+- each workspace already has its own SQLite file under `data/workspaces/<slug>/workspace.sqlite`;
+- each workspace already stores metadata, assets, backups, and exports inside its own folder.
 
-The architecture is still transitional. The workspace registry is currently stored in `data/workspaces/catalog.json`, while the target direction is a dedicated `data/app_index.sqlite` plus a first-class `WorkspaceManager`.
+The architecture is still evolving, but the major storage transition has already happened. The workspace registry now lives in `data/app_index.sqlite`, workspace manifests are written as `workspace_manifest.json` with legacy `workspace.json` compatibility, and lifecycle behavior is centered on a first-class `WorkspaceManager`.
 
 ## ExecPlans
 
@@ -29,8 +29,8 @@ Use an ExecPlan whenever the task touches one or more of these areas:
 ## Current architecture snapshot
 
 - Backend entrypoint: `backend/app/main.py`
-- Workspace lifecycle service today: `backend/app/services/workspace_service.py`
-- Workspace catalog persistence today: `backend/app/storage/catalog.py`
+- Workspace lifecycle service today: `backend/app/services/workspace_manager.py`
+- App index persistence today: `backend/app/storage/app_index.py`
 - SQLite engine and session bootstrapping: `backend/app/core/db.py`
 - Frontend API layer: `frontend/src/api/client.ts`
 - Workspace UI controls: `frontend/src/features/workspaces/WorkspaceControls.tsx`
@@ -38,8 +38,8 @@ Use an ExecPlan whenever the task touches one or more of these areas:
 
 Important current behavior:
 
-- workspace selection is ambient today through the `X-Workspace-Slug` request header;
-- API responses are not yet standardized, and still mix plain payloads, `{"status": "ok"}`, and `{"detail": "..."}` error shapes;
+- workspace scope is explicit for the modern API surface through `/api/workspaces/{workspace_slug}/...` routes;
+- API responses are standardized around a shared success envelope plus structured error payloads;
 - React Query is the right home for backend data, while Zustand should remain the home for UI-only state.
 
 ## Architecture guardrails
@@ -85,6 +85,7 @@ Keep all changes aligned with the local-first roadmap from the project improveme
 - Keep business logic in services, not in route handlers.
 - Keep SQLite path logic centralized; avoid scattering path-building rules across handlers and UI code.
 - If a task introduces global application metadata, prefer a dedicated app-index abstraction over adding more responsibility to `catalog.json`.
+  This mostly means extending the current `app_index.sqlite` abstractions rather than reviving legacy JSON catalog ideas.
 
 ### Frontend
 
@@ -117,9 +118,9 @@ Local dev run:
 
 Unless the user explicitly overrides the direction, assume the repository should continue moving toward these architectural goals:
 
-- replace `data/workspaces/catalog.json` with `data/app_index.sqlite`;
-- introduce a dedicated `WorkspaceManager` service for lifecycle operations;
+- keep `data/app_index.sqlite` as the authoritative workspace registry;
+- continue consolidating lifecycle operations inside `WorkspaceManager`;
 - add backup, restore, import, export, and integrity-check services;
-- make workspace metadata explicit with `workspace.json` and workspace-local `backups/` and `exports/` folders;
+- keep workspace metadata explicit with `workspace_manifest.json`, compatibility `workspace.json`, and workspace-local `backups/` and `exports/` folders;
 - standardize API success and error envelopes;
 - improve frontend structure and shared components only after the data and workspace foundation is stable.

@@ -1,6 +1,11 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { Plus, Save, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Eye, GripVertical, Plus, Save, Trash2 } from "lucide-react";
 import { api } from "../api/client";
+import { IconButton } from "../shared/components/IconButton";
+import { PopoverMenu } from "../shared/components/PopoverMenu";
 import type { CardSchema, SchemaField, TaxonomyTerm } from "../types/models";
 
 interface SchemaStudioProps {
@@ -10,6 +15,21 @@ interface SchemaStudioProps {
   onClose: () => void;
   onSaved: () => Promise<void>;
 }
+
+const FIELD_TYPES = [
+  "text",
+  "long_text",
+  "markdown",
+  "number",
+  "boolean",
+  "date",
+  "url",
+  "select",
+  "multi_select",
+  "relation",
+  "image",
+  "file",
+] as const;
 
 const emptyField = (): SchemaField => ({
   field_id: "",
@@ -30,8 +50,8 @@ const emptyField = (): SchemaField => ({
 });
 
 const emptySchema = (): CardSchema => ({
-  id: "new-schema",
-  label: "New Schema",
+  id: "new-card-type",
+  label: "New Card Type",
   description: "",
   icon: "✦",
   field_order: [],
@@ -44,12 +64,14 @@ const emptySchema = (): CardSchema => ({
 export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }: SchemaStudioProps) {
   const [selectedSchemaId, setSelectedSchemaId] = useState<string>(schemas[0]?.id ?? emptySchema().id);
   const [schemaDraft, setSchemaDraft] = useState<CardSchema>(schemas[0] ?? emptySchema());
+  const [advancedMode, setAdvancedMode] = useState(false);
   const [termDraft, setTermDraft] = useState<Partial<TaxonomyTerm>>({
     category: "domain",
     slug: "",
     label: "",
     description: "",
   });
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
     if (schemaDraft.id === selectedSchemaId && !schemas.some((schema) => schema.id === selectedSchemaId)) {
@@ -58,6 +80,8 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
     const current = schemas.find((schema) => schema.id === selectedSchemaId) ?? schemas[0] ?? emptySchema();
     setSchemaDraft(structuredClone(current));
   }, [schemaDraft.id, schemas, selectedSchemaId]);
+
+  const liveTableName = useMemo(() => `card_type_${safeSlug(schemaDraft.id || schemaDraft.label, "generic")}`, [schemaDraft.id, schemaDraft.label]);
 
   async function saveSchema() {
     const normalized = {
@@ -89,22 +113,47 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
     await onSaved();
   }
 
+  function handleFieldReorder(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      return;
+    }
+    const oldIndex = schemaDraft.fields.findIndex((field, index) => fieldKey(field, index) === active.id);
+    const newIndex = schemaDraft.fields.findIndex((field, index) => fieldKey(field, index) === over.id);
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+    setSchemaDraft((current) => ({
+      ...current,
+      fields: arrayMove(current.fields, oldIndex, newIndex),
+    }));
+  }
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal-card schema-studio" onClick={(event) => event.stopPropagation()}>
         <div className="section-header">
-          <h2>Schema Studio</h2>
-          <button className="secondary-button" onClick={onClose}>
-            Close
-          </button>
+          <div>
+            <h2>Card Type Studio</h2>
+            <p className="helper-text">Design visible fields first, then switch to Advanced mode when you need SQL and import/export behavior details.</p>
+          </div>
+          <div className="row-actions">
+            <button className="secondary-button" onClick={() => setAdvancedMode(!advancedMode)}>
+              {advancedMode ? "Default mode" : "Advanced mode"}
+            </button>
+            <button className="secondary-button" onClick={onClose}>
+              Close
+            </button>
+          </div>
         </div>
 
         <div className="studio-columns">
           <section className="studio-panel">
             <div className="section-header">
-              <h3>Card Schemas</h3>
+              <h3>Card Types</h3>
               <button
                 className="icon-button"
+                title="Create card type"
                 onClick={() => {
                   const fresh = emptySchema();
                   setSelectedSchemaId(fresh.id);
@@ -114,6 +163,7 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
                 <Plus size={14} />
               </button>
             </div>
+
             <div className="schema-tabs">
               {schemas.map((schema) => (
                 <button
@@ -125,95 +175,54 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
                 </button>
               ))}
             </div>
-            <div className="stack-form">
-              <input
-                className="themed-input"
-                value={schemaDraft.id}
-                onChange={(event) => setSchemaDraft((current) => ({ ...current, id: event.target.value }))}
-                placeholder="schema id"
-              />
-              <input
-                className="themed-input"
-                value={schemaDraft.label}
-                onChange={(event) => setSchemaDraft((current) => ({ ...current, label: event.target.value }))}
-                placeholder="Label"
-              />
-              <textarea
-                className="themed-textarea"
-                rows={3}
-                value={schemaDraft.description}
-                onChange={(event) => setSchemaDraft((current) => ({ ...current, description: event.target.value }))}
-                placeholder="Description"
-              />
-              <div className="field-grid">
-                {schemaDraft.fields.map((field, index) => (
-                  <div className="field-card" key={`${field.field_id}-${index}`}>
-                    <div className="field-row">
-                      <input
-                        className="themed-input"
-                        value={field.field_id}
-                        onChange={(event) => updateField(setSchemaDraft, index, { field_id: event.target.value })}
-                        placeholder="field id"
-                      />
-                      <input
-                        className="themed-input"
-                        value={field.label}
-                        onChange={(event) => updateField(setSchemaDraft, index, { label: event.target.value })}
-                        placeholder="label"
-                      />
-                    </div>
-                    <div className="field-row">
-                      <select
-                        className="themed-select"
-                        value={field.kind}
-                        onChange={(event) => updateField(setSchemaDraft, index, { kind: event.target.value })}
-                      >
-                        {["text", "long_text", "markdown", "number", "boolean", "date", "url", "select", "multi_select", "relation", "image", "file"].map((kind) => (
-                          <option key={kind} value={kind}>
-                            {kind}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        className="themed-input"
-                        value={field.placeholder}
-                        onChange={(event) => updateField(setSchemaDraft, index, { placeholder: event.target.value })}
-                        placeholder="placeholder"
-                      />
-                    </div>
-                    <label className="tiny-toggle">
-                      <input
-                        type="checkbox"
-                        checked={field.show_in_card}
-                        onChange={(event) => updateField(setSchemaDraft, index, { show_in_card: event.target.checked })}
-                      />
-                      <span>show in card</span>
-                    </label>
-                    <label className="tiny-toggle">
-                      <input
-                        type="checkbox"
-                        checked={field.show_in_list}
-                        onChange={(event) => updateField(setSchemaDraft, index, { show_in_list: event.target.checked })}
-                      />
-                      <span>show in list</span>
-                    </label>
-                    <button
-                      className="icon-button danger"
-                      onClick={() =>
-                        setSchemaDraft((current) => ({
-                          ...current,
-                          fields: current.fields.filter((_, currentIndex) => currentIndex !== index),
-                        }))
-                      }
-                    >
-                      <Trash2 size={14} />
-                    </button>
+
+            <div className="stack-form compact-top-gap">
+              <label className="field-stack">
+                <span>Name</span>
+                <input
+                  className="themed-input"
+                  value={schemaDraft.label}
+                  onChange={(event) => setSchemaDraft((current) => ({ ...current, label: event.target.value }))}
+                  placeholder="Location"
+                />
+              </label>
+              <label className="field-stack">
+                <span>Slug</span>
+                <input
+                  className="themed-input"
+                  value={schemaDraft.id}
+                  onChange={(event) => setSchemaDraft((current) => ({ ...current, id: event.target.value }))}
+                  placeholder="location"
+                />
+              </label>
+              <label className="field-stack">
+                <span>Description</span>
+                <textarea
+                  className="themed-textarea"
+                  rows={3}
+                  value={schemaDraft.description}
+                  onChange={(event) => setSchemaDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="How this card type is meant to be used."
+                />
+              </label>
+
+              {advancedMode ? (
+                <div className="meta-grid">
+                  <div className="meta-item">
+                    <span>SQL table name</span>
+                    <strong>{liveTableName}</strong>
                   </div>
-                ))}
-              </div>
-              <div className="row-actions">
+                  <div className="meta-item">
+                    <span>Internal icon</span>
+                    <strong>{schemaDraft.icon || "✦"}</strong>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="section-header">
+                <h3>Fields</h3>
                 <button
-                  className="secondary-button"
+                  className="secondary-button small"
                   onClick={() =>
                     setSchemaDraft((current) => ({ ...current, fields: [...current.fields, emptyField()] }))
                   }
@@ -221,9 +230,37 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
                   <Plus size={14} />
                   Add field
                 </button>
+              </div>
+
+              <DndContext sensors={sensors} onDragEnd={handleFieldReorder}>
+                <SortableContext
+                  items={schemaDraft.fields.map((field, index) => fieldKey(field, index))}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="field-grid studio-field-grid">
+                    {schemaDraft.fields.map((field, index) => (
+                      <FieldCard
+                        key={fieldKey(field, index)}
+                        id={fieldKey(field, index)}
+                        field={field}
+                        advancedMode={advancedMode}
+                        onChange={(patch) => updateField(setSchemaDraft, index, patch)}
+                        onDelete={() =>
+                          setSchemaDraft((current) => ({
+                            ...current,
+                            fields: current.fields.filter((_, currentIndex) => currentIndex !== index),
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                </SortableContext>
+              </DndContext>
+
+              <div className="row-actions">
                 <button className="primary-button" onClick={() => void saveSchema()}>
                   <Save size={14} />
-                  Save schema
+                  Save card type
                 </button>
               </div>
             </div>
@@ -231,74 +268,133 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
 
           <section className="studio-panel">
             <div className="section-header">
-              <h3>Taxonomy</h3>
+              <h3>Live preview</h3>
             </div>
-            <div className="taxonomy-groups">
-              {["domain", "type", "subtype", "layer"].map((category) => (
-                <div key={category} className="taxonomy-group">
-                  <strong>{category}</strong>
-                  {terms
-                    .filter((term) => term.category === category)
-                    .map((term) => (
-                      <button
-                        className="taxonomy-pill"
-                        key={term.id}
-                        onClick={() => setTermDraft(term)}
-                      >
-                        {term.label}
-                      </button>
-                    ))}
+            <div className="card-type-preview">
+              <div className="card-type-preview-header">
+                <div>
+                  <strong>{schemaDraft.label || "Untitled Card Type"}</strong>
+                  <p>{schemaDraft.description || "A compact preview of how this card type will read in the card pane."}</p>
                 </div>
-              ))}
-            </div>
-            <div className="stack-form">
-              <select
-                className="themed-select"
-                value={termDraft.category ?? "domain"}
-                onChange={(event) => setTermDraft((current) => ({ ...current, category: event.target.value }))}
-              >
-                <option value="domain">Domain</option>
-                <option value="type">Type</option>
-                <option value="subtype">Subtype</option>
-                <option value="layer">Layer</option>
-              </select>
-              <input
-                className="themed-input"
-                value={termDraft.slug ?? ""}
-                onChange={(event) => setTermDraft((current) => ({ ...current, slug: event.target.value }))}
-                placeholder="slug"
-              />
-              <input
-                className="themed-input"
-                value={termDraft.label ?? ""}
-                onChange={(event) => setTermDraft((current) => ({ ...current, label: event.target.value }))}
-                placeholder="label"
-              />
-              <textarea
-                className="themed-textarea"
-                rows={3}
-                value={termDraft.description ?? ""}
-                onChange={(event) => setTermDraft((current) => ({ ...current, description: event.target.value }))}
-                placeholder="description"
-              />
-              <div className="row-actions">
-                <button className="primary-button" onClick={() => void saveTerm()}>
-                  <Save size={14} />
-                  Save term
-                </button>
-                {termDraft.id ? (
-                  <button
-                    className="secondary-button danger"
-                    onClick={async () => {
-                      await api.deleteTaxonomyTerm(workspaceSlug, termDraft.id!);
-                      setTermDraft({ category: "domain", slug: "", label: "", description: "" });
-                      await onSaved();
-                    }}
-                  >
-                    <Trash2 size={14} />
-                    Delete term
+                <span className="tag-chip">Draft</span>
+              </div>
+              <div className="detail-meta-grid preview-meta-grid">
+                <div className="field-stack">
+                  <span>Card Type</span>
+                  <strong>{schemaDraft.label || "None yet"}</strong>
+                </div>
+                <div className="field-stack">
+                  <span>Created</span>
+                  <strong>Now</strong>
+                </div>
+                <div className="field-stack">
+                  <span>Updated</span>
+                  <strong>When saved</strong>
+                </div>
+              </div>
+              <div className="tag-zone compact-preview-section">
+                <div className="section-header">
+                  <h3>Dynamic fields</h3>
+                </div>
+                {schemaDraft.fields.filter((field) => field.show_in_card).length ? (
+                  <div className="dynamic-grid">
+                    {schemaDraft.fields
+                      .filter((field) => field.show_in_card)
+                      .map((field, index) => (
+                        <div className="field-stack preview-field" key={fieldKey(field, index)}>
+                          <span>{field.label || "Untitled field"}</span>
+                          <strong>{previewFieldValue(field)}</strong>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="helper-text">Fields marked “Show in card” will appear here.</p>
+                )}
+              </div>
+              <div className="tag-zone compact-preview-section">
+                <div className="section-header">
+                  <h3>Layout sections</h3>
+                </div>
+                <div className="asset-usage-list">
+                  {["Title", "Summary", "Status", "Card Type", "Categories & tags", "Dynamic fields", "Body", "Sources", "Relations", "Gallery", "Attachments"].map((label) => (
+                    <span key={label} className="tag-chip">
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="section-header compact-top-gap">
+                <h3>Categories</h3>
+              </div>
+              <div className="taxonomy-groups">
+                {["domain", "type", "subtype", "layer"].map((category) => (
+                  <div key={category} className="taxonomy-group">
+                    <strong>{category}</strong>
+                    {terms
+                      .filter((term) => term.category === category)
+                      .map((term) => (
+                        <button
+                          className="taxonomy-pill"
+                          key={term.id}
+                          onClick={() => setTermDraft(term)}
+                        >
+                          {term.label}
+                        </button>
+                      ))}
+                  </div>
+                ))}
+              </div>
+
+              <div className="stack-form compact-top-gap">
+                <select
+                  className="themed-select"
+                  value={termDraft.category ?? "domain"}
+                  onChange={(event) => setTermDraft((current) => ({ ...current, category: event.target.value }))}
+                >
+                  <option value="domain">Domain</option>
+                  <option value="type">Type</option>
+                  <option value="subtype">Subtype</option>
+                  <option value="layer">Layer</option>
+                </select>
+                <input
+                  className="themed-input"
+                  value={termDraft.label ?? ""}
+                  onChange={(event) => setTermDraft((current) => ({ ...current, label: event.target.value }))}
+                  placeholder="Name"
+                />
+                <input
+                  className="themed-input"
+                  value={termDraft.slug ?? ""}
+                  onChange={(event) => setTermDraft((current) => ({ ...current, slug: event.target.value }))}
+                  placeholder="Slug"
+                />
+                <textarea
+                  className="themed-textarea"
+                  rows={3}
+                  value={termDraft.description ?? ""}
+                  onChange={(event) => setTermDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="Description"
+                />
+                <div className="row-actions">
+                  <button className="primary-button" onClick={() => void saveTerm()}>
+                    <Save size={14} />
+                    Save category
                   </button>
-                ) : null}
+                  {termDraft.id ? (
+                    <button
+                      className="secondary-button danger"
+                      onClick={async () => {
+                        await api.deleteTaxonomyTerm(workspaceSlug, termDraft.id!);
+                        setTermDraft({ category: "domain", slug: "", label: "", description: "" });
+                        await onSaved();
+                      }}
+                    >
+                      <Trash2 size={14} />
+                      Delete category
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
           </section>
@@ -306,6 +402,181 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
       </div>
     </div>
   );
+}
+
+function FieldCard({
+  id,
+  field,
+  advancedMode,
+  onChange,
+  onDelete,
+}: {
+  id: string;
+  field: SchemaField;
+  advancedMode: boolean;
+  onChange: (patch: Partial<SchemaField>) => void;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  const visible = field.show_in_card || field.show_in_list;
+
+  return (
+    <div ref={setNodeRef} style={style} className="field-card studio-field-card">
+      <div className="section-header">
+        <div className="row-actions">
+          <button className="drag-handle-button" type="button" aria-label="Reorder field" {...attributes} {...listeners}>
+            <GripVertical size={14} />
+          </button>
+          <strong>{field.label || "New field"}</strong>
+        </div>
+        <div className="row-actions">
+          <PopoverMenu icon={<Eye size={14} />} label="Field behavior">
+            <label className="tiny-toggle">
+              <input type="checkbox" checked={field.show_in_card} onChange={(event) => onChange({ show_in_card: event.target.checked })} />
+              <span>Show in card</span>
+            </label>
+            <label className="tiny-toggle">
+              <input type="checkbox" checked={field.show_in_list} onChange={(event) => onChange({ show_in_list: event.target.checked })} />
+              <span>Show in Atlas</span>
+            </label>
+            <label className="tiny-toggle">
+              <input type="checkbox" checked={field.show_in_filters} onChange={(event) => onChange({ show_in_filters: event.target.checked })} />
+              <span>Filterable</span>
+            </label>
+            {advancedMode ? (
+              <>
+                <label className="tiny-toggle">
+                  <input type="checkbox" checked={field.is_active} onChange={(event) => onChange({ is_active: event.target.checked })} />
+                  <span>Active field</span>
+                </label>
+                <p className="helper-text no-top-margin">
+                  Table View, export, import, and search flags follow the saved card type definition in the SQLite bridge layer.
+                </p>
+              </>
+            ) : null}
+          </PopoverMenu>
+          <IconButton title="Delete field" aria-label="Delete field" danger onClick={onDelete}>
+            <Trash2 size={14} />
+          </IconButton>
+        </div>
+      </div>
+
+      <div className="field-row">
+        <label className="field-stack">
+          <span>Name</span>
+          <input
+            className="themed-input"
+            value={field.label}
+            onChange={(event) => onChange({ label: event.target.value })}
+            placeholder="Region"
+          />
+        </label>
+        <label className="field-stack">
+          <span>Field slug</span>
+          <input
+            className="themed-input"
+            value={field.field_id}
+            onChange={(event) => onChange({ field_id: event.target.value })}
+            placeholder="region"
+          />
+        </label>
+      </div>
+
+      <div className="field-row">
+        <label className="field-stack">
+          <span>Field type</span>
+          <select className="themed-select" value={field.kind} onChange={(event) => onChange({ kind: event.target.value })}>
+            {FIELD_TYPES.map((kind) => (
+              <option key={kind} value={kind}>
+                {kind}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field-stack">
+          <span>Visible</span>
+          <select
+            className="themed-select"
+            value={visible ? "visible" : "hidden"}
+            onChange={(event) =>
+              onChange(
+                event.target.value === "visible"
+                  ? { show_in_card: true }
+                  : { show_in_card: false, show_in_list: false, show_in_filters: false },
+              )
+            }
+          >
+            <option value="visible">Visible</option>
+            <option value="hidden">Hidden</option>
+          </select>
+        </label>
+      </div>
+
+      <div className="field-row">
+        <label className="tiny-toggle">
+          <input type="checkbox" checked={field.required} onChange={(event) => onChange({ required: event.target.checked })} />
+          <span>Required</span>
+        </label>
+        <label className="tiny-toggle">
+          <input type="checkbox" checked={field.repeatable} onChange={(event) => onChange({ repeatable: event.target.checked })} />
+          <span>Repeatable</span>
+        </label>
+      </div>
+
+      <label className="field-stack">
+        <span>Help text</span>
+        <input
+          className="themed-input"
+          value={field.placeholder}
+          onChange={(event) => onChange({ placeholder: event.target.value })}
+          placeholder="Shown inside the card editor."
+        />
+      </label>
+
+      {advancedMode ? (
+        <div className="meta-grid">
+          <div className="meta-item">
+            <span>SQL column name</span>
+            <strong>{`field_${safeSlug(field.field_id || field.label, "value").replaceAll("-", "_")}`}</strong>
+          </div>
+          <div className="meta-item">
+            <span>Search behavior</span>
+            <strong>{field.show_in_filters ? "Indexed for filters" : "Visible only"}</strong>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function fieldKey(field: SchemaField, index: number) {
+  return `${field.field_id || "field"}-${index}`;
+}
+
+function previewFieldValue(field: SchemaField) {
+  if (field.kind === "boolean") {
+    return field.required ? "True / False" : "Optional toggle";
+  }
+  if (field.kind === "number") {
+    return "123";
+  }
+  if (field.kind === "date") {
+    return "2026-07-08";
+  }
+  if (field.kind === "select" || field.kind === "multi_select") {
+    return "Choose from options";
+  }
+  return field.placeholder || "Sample value";
+}
+
+function safeSlug(value: string, fallback: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized || fallback;
 }
 
 function updateField(
