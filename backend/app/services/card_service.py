@@ -57,6 +57,10 @@ def _card_query():
     )
 
 
+def _active_card_clause():
+    return ~Card.registry_entry.has(CardRegistry.deleted_at.is_not(None))
+
+
 def _serialize_asset(asset: Asset, *, kind: str, sort_order: int, note: str = "") -> CardAssetRead:
     return CardAssetRead(
         id=asset.id,  # type: ignore[arg-type]
@@ -351,14 +355,17 @@ def create_card(session: Session, payload: CardCreate) -> Card:
     _apply_taxonomy(card, payload.taxonomy_term_ids)
     _sync_registry(session, card)
     session.commit()
-    fresh = session.execute(_card_query().where(Card.id == card.id)).scalar_one()
+    fresh = session.execute(_card_query().where(Card.id == card.id, _active_card_clause())).scalar_one()
     index_card(session, fresh)
     session.commit()
     return fresh
 
 
-def get_card(session: Session, card_id: int) -> Card:
-    card = session.execute(_card_query().where(Card.id == card_id)).scalar_one_or_none()
+def get_card(session: Session, card_id: int, *, include_deleted: bool = False) -> Card:
+    stmt = _card_query().where(Card.id == card_id)
+    if not include_deleted:
+        stmt = stmt.where(_active_card_clause())
+    card = session.execute(stmt).scalar_one_or_none()
     if not card:
         raise NotFoundError("Card was not found.")
     return card
@@ -403,19 +410,23 @@ def update_card(session: Session, card_id: int, payload: CardUpdate) -> Card:
     return updated
 
 
-def delete_card(session: Session, card_id: int) -> None:
-    card = get_card(session, card_id)
+def delete_card(session: Session, card_id: int, *, hard_delete: bool = False) -> None:
+    card = get_card(session, card_id, include_deleted=hard_delete)
     if card.registry_entry:
         card.registry_entry.deleted_at = datetime.now(timezone.utc)
+        card.registry_entry.status = "archived"
         session.add(card.registry_entry)
-    session.delete(card)
+    card.status = "archived"
+    session.add(card)
+    if hard_delete:
+        session.delete(card)
     session.commit()
     remove_from_index(session, card_id)
     session.commit()
 
 
 def reorder_cards(session: Session, ordered_ids: list[int]) -> None:
-    cards = session.execute(select(Card).where(Card.id.in_(ordered_ids))).scalars()
+    cards = session.execute(select(Card).where(Card.id.in_(ordered_ids), _active_card_clause())).scalars()
     mapping = {card.id: card for card in cards}
     for index, card_id in enumerate(ordered_ids):
         card = mapping.get(card_id)

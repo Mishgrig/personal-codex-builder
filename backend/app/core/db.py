@@ -117,6 +117,13 @@ def create_workspace_schema(db_path: Path) -> None:
                 "source_type": "TEXT NOT NULL DEFAULT 'web_page'",
             },
         )
+        _ensure_table_columns(
+            connection,
+            "notebook_asset_links",
+            {
+                "item_type": "TEXT NOT NULL DEFAULT 'asset_reference'",
+            },
+        )
         connection.execute(
             text(
                 """

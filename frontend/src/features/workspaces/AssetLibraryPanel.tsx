@@ -71,7 +71,7 @@ export function AssetLibraryPanel({
                 </p>
                 {asset.usages.length ? (
                   <div className="asset-usage-list">
-                    {asset.usages.slice(0, 4).map((usage, index) => (
+                    {asset.usages.map((usage, index) => (
                       <span key={`${asset.id}-${usage.asset_role}-${index}`} className="tag-chip">
                         {usage.label} · {usage.asset_role}
                       </span>
@@ -126,6 +126,11 @@ export function AssetLibraryPanel({
                   <button
                     className="secondary-button danger small"
                     disabled={asset.usage_count > 0}
+                    title={
+                      asset.usage_count > 0
+                        ? `Still used in ${asset.usages.map((usage) => `${usage.label} (${usage.asset_role})`).join(", ")}`
+                        : "Delete unused asset"
+                    }
                     onClick={() => void onDeleteAsset(asset.id)}
                   >
                     Delete unused

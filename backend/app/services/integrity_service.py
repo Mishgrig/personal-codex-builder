@@ -31,6 +31,8 @@ from app.models.workspace import (
 )
 from app.services.backup_service import list_workspace_backups
 from app.core.db import get_session_factory
+from app.services.file_service import delete_unused_asset
+from app.services.search_service import rebuild_index
 
 logger = logging.getLogger(__name__)
 SLUG_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -69,6 +71,7 @@ def inspect_workspace_health(slug: str, *, schema_version: str, app_version: str
     session = get_session_factory(db_path)()
     try:
         card_count = session.execute(select(func.count(Card.id))).scalar() or 0
+        cards = session.execute(select(Card)).scalars().all()
         schema_count = session.execute(select(func.count(CardSchema.id))).scalar() or 0
         taxonomy_term_count = session.execute(select(func.count(TaxonomyTerm.id))).scalar() or 0
         asset_paths = session.execute(select(CardAsset.stored_path)).scalars().all()
@@ -90,7 +93,12 @@ def inspect_workspace_health(slug: str, *, schema_version: str, app_version: str
     files_size_bytes, files_count = _directory_size(files_dir)
     backups = list_workspace_backups(slug)
     last_backup_at = backups[0]["created_at"] if backups else None
-    card_ids = {registry.legacy_card_id for registry in registry_rows if registry.legacy_card_id is not None}
+    active_card_ids = {
+        registry.legacy_card_id
+        for registry in registry_rows
+        if registry.legacy_card_id is not None and registry.deleted_at is None
+    }
+    all_card_ids = {card.id for card in cards}
     term_ids = {term.id for term in taxonomy_terms}
     invalid_card_type_slugs = sorted(card_type.slug for card_type in card_types if not SLUG_PATTERN.match(card_type.slug))
     invalid_table_names = sorted(
@@ -134,14 +142,14 @@ def inspect_workspace_health(slug: str, *, schema_version: str, app_version: str
     broken_relation_links = sorted(
         str(relation.id)
         for relation in relation_rows
-        if relation.source_card_id not in card_ids or relation.target_card_id not in card_ids
+        if relation.source_card_id not in all_card_ids or relation.target_card_id not in all_card_ids
     )
     broken_taxonomy_links = sorted(
         str(link.id)
         for link in taxonomy_links
-        if link.card_id not in card_ids or link.term_id not in term_ids
+        if link.card_id not in all_card_ids or link.term_id not in term_ids
     )
-    search_index_out_of_sync = search_index_count != len(card_ids)
+    search_index_out_of_sync = search_index_count != len(active_card_ids)
     checks = [
         {
             "key": "sqlite_integrity",
@@ -214,7 +222,7 @@ def inspect_workspace_health(slug: str, *, schema_version: str, app_version: str
             else "Search index appears out of sync with active registry rows.",
             "details": {
                 "search_index_count": search_index_count,
-                "active_registry_count": len(card_ids),
+                "active_registry_count": len(active_card_ids),
             },
         },
         {
@@ -295,6 +303,7 @@ def inspect_asset_health(slug: str) -> dict[str, Any]:
                 selectinload(Asset.gallery_links),
                 selectinload(Asset.attachment_links),
                 selectinload(Asset.source_links),
+                selectinload(Asset.notebook_links),
             )
         ).scalars().all()
         cards = session.execute(select(Card)).scalars().all()
@@ -322,7 +331,7 @@ def inspect_asset_health(slug: str) -> dict[str, Any]:
 
     used_asset_ids = set()
     for asset in assets:
-        if asset.gallery_links or asset.attachment_links or asset.source_links:
+        if asset.gallery_links or asset.attachment_links or asset.source_links or asset.notebook_links:
             used_asset_ids.add(asset.id)
     unused_assets = sorted(asset.id for asset in assets if asset.id not in used_asset_ids)
 
@@ -428,3 +437,127 @@ def inspect_asset_health(slug: str) -> dict[str, Any]:
         "checks": checks,
         "categories": categories,
     }
+
+
+def repair_workspace_health(slug: str, *, action: str) -> dict[str, Any]:
+    db_path = resolve_workspace_db_path(slug)
+    session = get_session_factory(db_path)()
+    try:
+        if action == "rebuild_search_index":
+            rebuild_index(session)
+            return {"message": "Search index rebuilt.", "repaired_count": 1, "skipped_count": 0}
+
+        if action == "remove_broken_relation_links":
+            cards = {card.id for card in session.execute(select(Card)).scalars().all()}
+            relations = session.execute(select(CardRelation)).scalars().all()
+            broken = [
+                relation
+                for relation in relations
+                if relation.source_card_id not in cards or relation.target_card_id not in cards
+            ]
+            for relation in broken:
+                session.delete(relation)
+            session.commit()
+            return {
+                "message": "Broken relation links removed." if broken else "No broken relation links found.",
+                "repaired_count": len(broken),
+                "skipped_count": 0,
+            }
+
+        raise ValueError(f"Unsupported workspace repair action: {action}")
+    finally:
+        session.close()
+
+
+def repair_asset_health(slug: str, *, action: str) -> dict[str, Any]:
+    db_path = resolve_workspace_db_path(slug)
+    workspace_root = get_settings().workspaces_dir
+    session = get_session_factory(db_path)()
+    try:
+        if action == "remove_broken_cover_references":
+            assets = {asset.id for asset in session.execute(select(Asset)).scalars().all()}
+            cards = session.execute(select(Card)).scalars().all()
+            repaired = 0
+            for card in cards:
+                if card.cover_asset_id and card.cover_asset_id not in assets:
+                    card.cover_asset_id = None
+                    session.add(card)
+                    repaired += 1
+            session.commit()
+            return {
+                "message": "Broken cover references removed." if repaired else "No broken cover references found.",
+                "repaired_count": repaired,
+                "skipped_count": 0,
+            }
+
+        if action in {"remove_broken_gallery_links", "remove_broken_attachment_links", "remove_broken_source_links"}:
+            assets = {asset.id for asset in session.execute(select(Asset)).scalars().all()}
+            cards = {card.id for card in session.execute(select(Card)).scalars().all()}
+            sources = {source.id for source in session.execute(select(CardSource)).scalars().all()}
+            if action == "remove_broken_gallery_links":
+                links = session.execute(select(CardGalleryAsset)).scalars().all()
+                broken = [link for link in links if link.asset_id not in assets or link.card_id not in cards]
+            elif action == "remove_broken_attachment_links":
+                links = session.execute(select(CardAttachmentAsset)).scalars().all()
+                broken = [link for link in links if link.asset_id not in assets or link.card_id not in cards]
+            else:
+                links = session.execute(select(CardSourceAsset)).scalars().all()
+                broken = [link for link in links if link.asset_id not in assets or link.source_id not in sources]
+            for link in broken:
+                session.delete(link)
+            session.commit()
+            label = action.replace("_", " ")
+            return {
+                "message": f"{label.capitalize()} repaired." if broken else f"No issues found for {label}.",
+                "repaired_count": len(broken),
+                "skipped_count": 0,
+            }
+
+        if action == "delete_orphaned_asset_files":
+            asset_paths = {asset.relative_path for asset in session.execute(select(Asset)).scalars().all()}
+            assets_root = workspace_root / slug / "assets"
+            removed = 0
+            if assets_root.exists():
+                for file_path in assets_root.rglob("*"):
+                    if file_path.is_file():
+                        relative = file_path.relative_to(workspace_root).as_posix()
+                        if relative not in asset_paths:
+                            file_path.unlink()
+                            removed += 1
+            return {
+                "message": "Orphaned asset files deleted." if removed else "No orphaned asset files found.",
+                "repaired_count": removed,
+                "skipped_count": 0,
+            }
+
+        if action == "delete_unused_assets":
+            assets = session.execute(
+                select(Asset).options(
+                    selectinload(Asset.gallery_links),
+                    selectinload(Asset.attachment_links),
+                    selectinload(Asset.source_links),
+                )
+            ).scalars().all()
+            unused_ids = [
+                asset.id for asset in assets if not asset.gallery_links and not asset.attachment_links and not asset.source_links
+            ]
+            removed = 0
+            for asset_id in unused_ids:
+                delete_unused_asset(session, asset_id=asset_id)
+                removed += 1
+            return {
+                "message": "Unused assets deleted." if removed else "No unused assets found.",
+                "repaired_count": removed,
+                "skipped_count": 0,
+            }
+
+        if action == "rebuild_asset_index":
+            return {
+                "message": "Asset Library reads directly from the SQLite registry, so no separate asset index rebuild is needed.",
+                "repaired_count": 0,
+                "skipped_count": 1,
+            }
+
+        raise ValueError(f"Unsupported asset repair action: {action}")
+    finally:
+        session.close()

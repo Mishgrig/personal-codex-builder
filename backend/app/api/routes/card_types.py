@@ -10,17 +10,22 @@ from app.schemas.schema import (
     CardTypeImportPreviewRead,
     CardTypeImportRequest,
     CardTypeImportResultRead,
+    CardTypeRowDeleteRead,
+    CardTypeRowWriteRequest,
     CardTypeStructureExportRead,
     CardTypeTableExportRead,
     CardTypeTableRead,
 )
 from app.services.schema_service import (
+    create_card_type_row,
     apply_card_type_import,
     export_card_type_table,
     export_card_type_structure,
-    get_card_type_table,
+    get_card_type_table_with_filters,
     list_card_types,
     preview_card_type_import,
+    soft_delete_card_type_row,
+    update_card_type_row,
 )
 from app.services.workspace_manager import get_workspace_manager
 
@@ -40,9 +45,72 @@ def get_workspace_card_type_table(
     workspace_slug: str,
     card_type_slug: str,
     q: str = Query(default=""),
+    sort_by: str = Query(default="manual"),
+    sort_dir: str = Query(default="asc"),
+    status: str = Query(default=""),
     session: Session = Depends(get_workspace_db),
 ) -> dict[str, CardTypeTableRead]:
-    return {"data": CardTypeTableRead.model_validate(get_card_type_table(session, card_type_slug, q=q))}
+    return {
+        "data": CardTypeTableRead.model_validate(
+            get_card_type_table_with_filters(
+                session,
+                card_type_slug,
+                q=q,
+                sort_by=sort_by,
+                sort_dir=sort_dir,
+                status=status,
+            )
+        )
+    }
+
+
+@router.post("/{card_type_slug}/rows", response_model=APIDataEnvelope[CardTypeTableRead])
+def post_workspace_card_type_row(
+    workspace_slug: str,
+    card_type_slug: str,
+    payload: CardTypeRowWriteRequest,
+    session: Session = Depends(get_workspace_db),
+) -> dict[str, CardTypeTableRead]:
+    create_card_type_row(
+        session,
+        card_type_slug,
+        title=payload.title,
+        summary=payload.summary,
+        status=payload.status,
+        values=payload.values,
+    )
+    return {"data": CardTypeTableRead.model_validate(get_card_type_table_with_filters(session, card_type_slug))}
+
+
+@router.patch("/{card_type_slug}/rows/{card_id}", response_model=APIDataEnvelope[CardTypeTableRead])
+def patch_workspace_card_type_row(
+    workspace_slug: str,
+    card_type_slug: str,
+    card_id: int,
+    payload: CardTypeRowWriteRequest,
+    session: Session = Depends(get_workspace_db),
+) -> dict[str, CardTypeTableRead]:
+    update_card_type_row(
+        session,
+        card_type_slug,
+        card_id,
+        title=payload.title,
+        summary=payload.summary,
+        status=payload.status,
+        values=payload.values,
+    )
+    return {"data": CardTypeTableRead.model_validate(get_card_type_table_with_filters(session, card_type_slug))}
+
+
+@router.delete("/{card_type_slug}/rows/{card_id}", response_model=APIDataEnvelope[CardTypeRowDeleteRead])
+def delete_workspace_card_type_row(
+    workspace_slug: str,
+    card_type_slug: str,
+    card_id: int,
+    session: Session = Depends(get_workspace_db),
+) -> dict[str, CardTypeRowDeleteRead]:
+    deleted = soft_delete_card_type_row(session, card_type_slug, card_id)
+    return {"data": CardTypeRowDeleteRead.model_validate(deleted)}
 
 
 @router.get(
@@ -111,6 +179,7 @@ def post_workspace_card_type_import_apply(
     imported = apply_card_type_import(
         session,
         card_type_slug,
+        workspace_slug=workspace_slug,
         import_format=payload.format,
         content_text=payload.content_text,
         content_base64=payload.content_base64,

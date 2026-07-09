@@ -53,11 +53,14 @@ interface WorkspaceManagerPanelProps {
   onAttachAsset: (assetId: string, role: "gallery" | "attachment") => Promise<void>;
   onAttachSourceAsset: (assetId: string, sourceId: number) => Promise<void>;
   onDeleteAsset: (assetId: string) => Promise<void>;
+  onRepairWorkspaceHealth: (action: string) => Promise<void>;
+  onRepairAssetHealth: (action: string) => Promise<void>;
   onRenameWorkspace: (name: string, description: string) => Promise<void>;
   onDuplicateWorkspace: (name: string) => Promise<void>;
   onDeleteWorkspace: () => Promise<void>;
   onCreateBackup: () => Promise<unknown>;
   onExportWorkspace: () => Promise<unknown>;
+  onExportWorkspaceData: (includeAssetIds: boolean) => Promise<unknown>;
   onArchiveWorkspace: () => Promise<unknown>;
   onUnarchiveWorkspace: (slug: string) => Promise<unknown>;
   onImportWorkspace: (file: File, name?: string) => Promise<unknown>;
@@ -106,11 +109,14 @@ export function WorkspaceManagerPanel({
   onAttachAsset,
   onAttachSourceAsset,
   onDeleteAsset,
+  onRepairWorkspaceHealth,
+  onRepairAssetHealth,
   onRenameWorkspace,
   onDuplicateWorkspace,
   onDeleteWorkspace,
   onCreateBackup,
   onExportWorkspace,
+  onExportWorkspaceData,
   onArchiveWorkspace,
   onUnarchiveWorkspace,
   onImportWorkspace,
@@ -322,7 +328,15 @@ export function WorkspaceManagerPanel({
                   </button>
                   <button className="secondary-button" disabled={busy} onClick={() => void onExportWorkspace()}>
                     <Download size={15} />
-                    Export workspace
+                    Export portable workspace
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onExportWorkspaceData(false)}>
+                    <Download size={15} />
+                    Export data JSON
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onExportWorkspaceData(true)}>
+                    <Download size={15} />
+                    Data + asset ids
                   </button>
                   <button className="secondary-button danger" disabled={busy} onClick={() => void onArchiveWorkspace()}>
                     <Archive size={15} />
@@ -421,24 +435,46 @@ export function WorkspaceManagerPanel({
             }
           >
             {assetHealth ? (
-              <div className="meta-grid">
-                <div className="meta-item">
-                  <span>Checked</span>
-                  <strong>{formatDate(assetHealth.checked_at)}</strong>
+              <>
+                <div className="action-strip">
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairAssetHealth("remove_broken_cover_references")}>
+                    Clear broken covers
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairAssetHealth("remove_broken_gallery_links")}>
+                    Repair gallery links
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairAssetHealth("remove_broken_attachment_links")}>
+                    Repair attachment links
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairAssetHealth("remove_broken_source_links")}>
+                    Repair source links
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairAssetHealth("delete_orphaned_asset_files")}>
+                    Delete orphaned files
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairAssetHealth("delete_unused_assets")}>
+                    Delete unused assets
+                  </button>
                 </div>
-                <div className="meta-item">
-                  <span>Missing files</span>
-                  <strong>{assetHealth.missing_asset_files.length}</strong>
+                <div className="meta-grid">
+                  <div className="meta-item">
+                    <span>Checked</span>
+                    <strong>{formatDate(assetHealth.checked_at)}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Missing files</span>
+                    <strong>{assetHealth.missing_asset_files.length}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Orphaned files</span>
+                    <strong>{assetHealth.orphaned_files.length}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Unused assets</span>
+                    <strong>{assetHealth.unused_assets.length}</strong>
+                  </div>
                 </div>
-                <div className="meta-item">
-                  <span>Orphaned files</span>
-                  <strong>{assetHealth.orphaned_files.length}</strong>
-                </div>
-                <div className="meta-item">
-                  <span>Unused assets</span>
-                  <strong>{assetHealth.unused_assets.length}</strong>
-                </div>
-              </div>
+              </>
             ) : (
               <StateNotice
                 title="Asset health will appear here"
@@ -471,36 +507,46 @@ export function WorkspaceManagerPanel({
             }
           >
             {health ? (
-              <div className="meta-grid">
-                <div className="meta-item">
-                  <span>Checked</span>
-                  <strong>{formatDate(health.checked_at)}</strong>
+              <>
+                <div className="action-strip">
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairWorkspaceHealth("rebuild_search_index")}>
+                    Rebuild search index
+                  </button>
+                  <button className="secondary-button" disabled={busy} onClick={() => void onRepairWorkspaceHealth("remove_broken_relation_links")}>
+                    Remove broken relation links
+                  </button>
                 </div>
-                <div className="meta-item">
-                  <span>Database size</span>
-                  <strong>{formatBytes(health.db_size_bytes)}</strong>
+                <div className="meta-grid">
+                  <div className="meta-item">
+                    <span>Checked</span>
+                    <strong>{formatDate(health.checked_at)}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Database size</span>
+                    <strong>{formatBytes(health.db_size_bytes)}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Files size</span>
+                    <strong>{formatBytes(health.files_size_bytes)}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Missing files</span>
+                    <strong>{health.missing_files_count}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Cards</span>
+                    <strong>{health.card_count}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Check groups</span>
+                    <strong>{Object.keys(health.categories).length}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Taxonomy terms</span>
+                    <strong>{health.taxonomy_term_count}</strong>
+                  </div>
                 </div>
-                <div className="meta-item">
-                  <span>Files size</span>
-                  <strong>{formatBytes(health.files_size_bytes)}</strong>
-                </div>
-                <div className="meta-item">
-                  <span>Missing files</span>
-                  <strong>{health.missing_files_count}</strong>
-                </div>
-                <div className="meta-item">
-                  <span>Cards</span>
-                  <strong>{health.card_count}</strong>
-                </div>
-                <div className="meta-item">
-                  <span>Check groups</span>
-                  <strong>{Object.keys(health.categories).length}</strong>
-                </div>
-                <div className="meta-item">
-                  <span>Taxonomy terms</span>
-                  <strong>{health.taxonomy_term_count}</strong>
-                </div>
-              </div>
+              </>
             ) : (
               <StateNotice
                 title="Workspace health will appear here"

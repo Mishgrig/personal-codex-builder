@@ -38,6 +38,13 @@ This phase hardens workspace lifecycle safety before broader storage and UI evol
 - [x] (2026-07-08T22:12Z) Brought the Table View frontend closer to the existing backend feature set by adding table JSON export, clearer column metadata, fuller import preview feedback, and explicit XLSX import mode in the UI.
 - [x] (2026-07-08T22:28Z) Finished the next UI simplification pass by moving database creation and ordering into the Manage databases modal, persisting workspace order in `app_index.sqlite`, tightening the card detail layout, and redesigning Card Type Studio around live preview plus field-behavior controls.
 - [x] (2026-07-08T22:33Z) Fixed a runtime-only migration gap for existing local workspaces by teaching `create_workspace_schema()` to add missing additive columns like `workspace_settings.ui_preferences` and `workspace_settings.notebook_json`, then verified the real app could boot against older local data again.
+- [x] (2026-07-09T09:10Z) Extended export/import and workspace repair safety so canonical `assets/` content is archived, imported asset paths are rebased to the new slug, notebook saves preserve plain text, and demo workspace self-repair now creates a safety archive first.
+- [x] (2026-07-09T09:35Z) Clarified the bridge architecture decision that the legacy `cards` table remains the editable content source of truth for now while `cards_registry`, `card_type_definitions`, and `card_type_<slug>` stay synchronized as derived bridge/index structures for search, table view, and future migration.
+- [x] (2026-07-09T09:42Z) Switched card deletion to soft-delete by default, kept optional hard delete for explicit destructive flows, excluded archived cards from list/search/table queries, and added a fallback search path when FTS is unavailable.
+- [x] (2026-07-09T09:46Z) Verified that card type and field evolution stays additive-safe by deactivating removed fields instead of dropping them, preserving old rows while exposing only active fields in the current table surface.
+- [x] (2026-07-09T11:48Z) Standardized more of the frontend interaction layer around reusable dropdown/popover, toggle, confirm-dialog, and collapsible-section primitives, then applied them to workspace controls, detail sections, and Card Type Studio.
+- [x] (2026-07-09T11:50Z) Documented the current UI preference persistence decision: browser `localStorage` remains acceptable for this local-first single-user phase, while workspace-backed preference storage stays deferred until notebook itemization and broader shared-state cleanup land.
+- [x] (2026-07-09T12:07Z) Completed notebook item architecture, notebook-aware asset usage protection, another shared-primitives pass across notebook and schema flows, and the next editor/studio polish round with richer notebook blocks, safer field deletion, honest field-behavior controls, copy/paste formatting, palettes, and eyedropper-assisted color picking.
 
 ## Surprises & Discoveries
 
@@ -61,6 +68,12 @@ This phase hardens workspace lifecycle safety before broader storage and UI evol
 - Decision: destructive workspace delete will create an app-level safety archive outside the workspace folder instead of relying on workspace-local backups.
   Rationale: workspace-local backups are deleted together with the workspace folder and therefore do not satisfy recovery requirements for destructive delete.
   Date/Author: 2026-07-08 / Codex
+- Decision: until a later full migration phase, `cards` remains the canonical editable content store and the newer registry/type tables are synchronized bridge structures rather than the only write-side source of truth.
+  Rationale: the current UI, API, and attachment/notebook flows still mutate `cards` directly, while the bridge tables already provide safer indexing and table-view capabilities without forcing a risky cutover mid-project.
+  Date/Author: 2026-07-09 / Codex
+- Decision: for this phase, per-workspace UI preferences may continue living in browser `localStorage`.
+  Rationale: the product is explicitly local-first, offline-capable, and single-user oriented, and current preference state mostly controls personal workspace ergonomics rather than portable content. Moving every UI preference into workspace storage now would add migration surface while notebook-item architecture and broader UI cleanup are still in flux.
+  Date/Author: 2026-07-09 / Codex
 
 ## Outcomes & Retrospective
 
@@ -88,6 +101,8 @@ Known non-blocking follow-ups:
 - backend tests still emit the existing Starlette `httpx` deprecation warning;
 - backend tests still emit the existing Pydantic `schema` field shadowing warning;
 - Vite still warns about the large production chunk size, but the build succeeds.
+- bridge cleanup is still incomplete: archived cards are now hidden and preserved safely, but a later phase can add explicit restore/unarchive UI if the product needs reversible card recovery from the frontend.
+- Card Type Studio is still bridge-backed rather than a fully separate card-type-native editor, but the visible controls now align with the flags that actually persist in the current schema model and no longer imply unsupported independent behaviors.
 
 ## Context and Orientation
 

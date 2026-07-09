@@ -158,19 +158,24 @@ def patch_workspace_card(
 
 
 @router.delete("/{card_id}", response_model=APIDataEnvelope[ActionStatus])
-def remove_card(card_id: int, session: Session = Depends(get_db)) -> dict[str, ActionStatus]:
-    delete_card(session, card_id)
-    return {"data": ActionStatus(message="Card deleted.")}
+def remove_card(
+    card_id: int,
+    hard: bool = Query(default=False),
+    session: Session = Depends(get_db),
+) -> dict[str, ActionStatus]:
+    delete_card(session, card_id, hard_delete=hard)
+    return {"data": ActionStatus(message="Card permanently deleted." if hard else "Card archived.")}
 
 
 @workspace_router.delete("/{card_id}", response_model=APIDataEnvelope[ActionStatus])
 def remove_workspace_card(
     workspace_slug: str,
     card_id: int,
+    hard: bool = Query(default=False),
     session: Session = Depends(get_workspace_db),
 ) -> dict[str, ActionStatus]:
-    delete_card(session, card_id)
-    return {"data": ActionStatus(message="Card deleted.")}
+    delete_card(session, card_id, hard_delete=hard)
+    return {"data": ActionStatus(message="Card permanently deleted." if hard else "Card archived.")}
 
 
 @router.post("/reorder", response_model=APIDataEnvelope[ActionStatus])

@@ -4,6 +4,7 @@ import logging
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -28,7 +29,7 @@ from app.core.paths import (
     workspace_relative_dir,
 )
 from app.models.app_index import AppWorkspace
-from app.models.workspace import Card, CardSchema, WorkspaceSetting
+from app.models.workspace import Asset, Card, CardAsset, CardSchema, NotebookAssetLink, WorkspaceSetting
 from app.schemas.workspace import WorkspaceCreate, WorkspaceUpdate
 from app.services.backup_service import (
     create_workspace_backup,
@@ -41,7 +42,12 @@ from app.services.export_service import (
     create_workspace_safety_export,
     extract_workspace_archive,
 )
-from app.services.integrity_service import inspect_asset_health, inspect_workspace_health
+from app.services.integrity_service import (
+    inspect_asset_health,
+    inspect_workspace_health,
+    repair_asset_health,
+    repair_workspace_health,
+)
 from app.services.seed_service import seed_workspace
 from app.storage.app_index import app_index_session, create_app_index_schema
 from app.storage.catalog import load_catalog
@@ -66,6 +72,46 @@ def _parse_datetime(value: str | None) -> datetime:
     if not value:
         return _now()
     return datetime.fromisoformat(value)
+
+
+def _default_notebook_item() -> dict:
+    return {
+        "id": f"note-{uuid4().hex[:8]}",
+        "type": "rich_text",
+        "title": "Notebook",
+        "sort_order": 0,
+        "body_json": {"type": "doc", "content": []},
+        "body_text": "",
+    }
+
+
+def _normalize_notebook_items(notebook_payload: dict | None) -> list[dict]:
+    notebook_payload = notebook_payload or {}
+    raw_items = notebook_payload.get("items")
+    if isinstance(raw_items, list) and raw_items:
+        items: list[dict] = []
+        for index, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                continue
+            item_type = str(item.get("type") or "plain_text")
+            normalized = {
+                "id": item.get("id") or f"note-{uuid4().hex[:8]}",
+                "type": item_type,
+                "title": item.get("title") or item_type.replace("_", " ").title(),
+                "sort_order": item.get("sort_order", index),
+            }
+            normalized.update(item)
+            items.append(normalized)
+        if items:
+            return sorted(items, key=lambda entry: int(entry.get("sort_order", 0)))
+
+    return [
+        {
+            **_default_notebook_item(),
+            "body_json": notebook_payload.get("body_json") or {"type": "doc", "content": []},
+            "body_text": notebook_payload.get("body_text", ""),
+        }
+    ]
 
 
 class WorkspaceManager:
@@ -348,6 +394,7 @@ class WorkspaceManager:
                 if not db_path.exists():
                     raise ValidationAPIError("Imported archive did not contain workspace.sqlite.")
                 create_workspace_schema(db_path)
+                self._rebase_workspace_relative_paths(new_slug)
                 self._rename_workspace_setting(new_slug, target_name)
                 snapshot = self._workspace_snapshot(new_slug)
                 created_at = _parse_datetime(metadata.get("created_at"))
@@ -396,6 +443,16 @@ class WorkspaceManager:
         payload["checked_at"] = _parse_datetime(payload["checked_at"])
         return payload
 
+    def repair_workspace_health(self, slug: str, *, action: str) -> dict:
+        self.bootstrap()
+        self._require_workspace(slug)
+        return repair_workspace_health(slug, action=action)
+
+    def repair_asset_health(self, slug: str, *, action: str) -> dict:
+        self.bootstrap()
+        self._require_workspace(slug)
+        return repair_asset_health(slug, action=action)
+
     def get_notebook(self, slug: str) -> dict:
         self.bootstrap()
         session = self.get_workspace_session(slug)
@@ -404,24 +461,59 @@ class WorkspaceManager:
             if not settings:
                 raise NotFoundError("Workspace settings were not found.", code="WORKSPACE_SETTINGS_NOT_FOUND")
             notebook = settings.notebook_json or {}
+            items = _normalize_notebook_items(notebook)
+            primary = next((item for item in items if item.get("type") == "rich_text"), items[0] if items else _default_notebook_item())
             return {
-                "body_json": notebook.get("body_json") or {"type": "doc", "content": []},
-                "body_text": notebook.get("body_text", ""),
+                "items": items,
+                "body_json": primary.get("body_json") or {"type": "doc", "content": []},
+                "body_text": primary.get("body_text", ""),
             }
         finally:
             session.close()
 
-    def update_notebook(self, slug: str, *, body_json: dict, body_text: str) -> dict:
+    def update_notebook(self, slug: str, *, body_json: dict, body_text: str, items: list[dict] | None = None) -> dict:
         self.bootstrap()
         session = self.get_workspace_session(slug)
         try:
             settings = session.get(WorkspaceSetting, 1)
             if not settings:
                 raise NotFoundError("Workspace settings were not found.", code="WORKSPACE_SETTINGS_NOT_FOUND")
+            normalized_items = _normalize_notebook_items({"items": items} if items else None)
+            primary_rich_text = next(
+                (item for item in normalized_items if item.get("type") == "rich_text"),
+                None,
+            )
+            if primary_rich_text is None:
+                primary_rich_text = {
+                    **_default_notebook_item(),
+                    "body_json": body_json,
+                    "body_text": body_text,
+                }
+                normalized_items.insert(0, primary_rich_text)
+            else:
+                primary_rich_text["body_json"] = body_json
+                primary_rich_text["body_text"] = body_text
             settings.notebook_json = {
+                "items": normalized_items,
                 "body_json": body_json,
                 "body_text": body_text,
             }
+            session.execute(select(NotebookAssetLink))
+            session.query(NotebookAssetLink).delete()
+            for item in normalized_items:
+                item_type = str(item.get("type") or "")
+                referenced_asset_ids: list[str] = []
+                if item_type in {"asset_reference", "image", "file"} and item.get("asset_id"):
+                    referenced_asset_ids.append(str(item["asset_id"]))
+                for asset_id in referenced_asset_ids:
+                    if session.get(Asset, asset_id):
+                        session.add(
+                            NotebookAssetLink(
+                                item_id=str(item.get("id")),
+                                item_type=item_type,
+                                asset_id=asset_id,
+                            )
+                        )
             session.add(settings)
             session.commit()
         finally:
@@ -447,6 +539,7 @@ class WorkspaceManager:
 
     def ensure_default_workspace(self) -> None:
         self.bootstrap()
+        demo_needs_repair = False
         with app_index_session() as session:
             records = session.execute(select(AppWorkspace)).scalars().all()
             if records:
@@ -465,7 +558,14 @@ class WorkspaceManager:
                         workspace_session.close()
                 if not needs_repair:
                     return
+                demo_needs_repair = True
         if workspace_dir("spelljammer-atlas").exists():
+            if demo_needs_repair and resolve_workspace_db_path("spelljammer-atlas").exists():
+                safety_archive = create_workspace_safety_export("spelljammer-atlas", reason="demo-repair")
+                logger.info(
+                    "Created demo workspace safety archive before repair",
+                    extra={"slug": "spelljammer-atlas", "safety_archive": safety_archive["path"]},
+                )
             shutil.rmtree(workspace_dir("spelljammer-atlas"))
         with app_index_session() as session:
             record = session.execute(
@@ -751,6 +851,39 @@ class WorkspaceManager:
                 workspace_session.commit()
         finally:
             workspace_session.close()
+
+    def _rebase_workspace_relative_paths(self, slug: str) -> None:
+        db_path = resolve_workspace_db_path(slug)
+        workspace_session = get_session_factory(db_path)()
+        try:
+            settings = workspace_session.get(WorkspaceSetting, 1)
+            if settings and settings.logo_path:
+                settings.logo_path = self._rebase_relative_path(settings.logo_path, slug)
+                workspace_session.add(settings)
+
+            assets = workspace_session.execute(select(Asset)).scalars().all()
+            for asset in assets:
+                asset.relative_path = self._rebase_relative_path(asset.relative_path, slug)
+                workspace_session.add(asset)
+
+            legacy_assets = workspace_session.execute(select(CardAsset)).scalars().all()
+            for legacy_asset in legacy_assets:
+                legacy_asset.stored_path = self._rebase_relative_path(legacy_asset.stored_path, slug)
+                workspace_session.add(legacy_asset)
+
+            workspace_session.commit()
+        finally:
+            workspace_session.close()
+
+    def _rebase_relative_path(self, relative_path: str, slug: str) -> str:
+        if not relative_path:
+            return relative_path
+        path = Path(relative_path)
+        parts = list(path.parts)
+        if len(parts) >= 2 and parts[0] == "workspaces":
+            parts[1] = slug
+            return Path(*parts).as_posix()
+        return relative_path
 
     def _get_record_or_raise(self, session: Session, slug: str) -> AppWorkspace:
         record = session.execute(select(AppWorkspace).where(AppWorkspace.slug == slug)).scalar_one_or_none()

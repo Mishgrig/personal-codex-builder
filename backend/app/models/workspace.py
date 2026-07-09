@@ -284,6 +284,9 @@ class Asset(Base, TimestampMixin):
     source_links: Mapped[list["CardSourceAsset"]] = relationship(
         back_populates="asset", cascade="all, delete-orphan"
     )
+    notebook_links: Mapped[list["NotebookAssetLink"]] = relationship(
+        back_populates="asset", cascade="all, delete-orphan"
+    )
 
 
 class CardGalleryAsset(Base, TimestampMixin):
@@ -340,3 +343,15 @@ class CardAsset(Base, TimestampMixin):
     sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     card: Mapped[Card] = relationship(back_populates="assets")
+
+
+class NotebookAssetLink(Base, TimestampMixin):
+    __tablename__ = "notebook_asset_links"
+    __table_args__ = (UniqueConstraint("item_id", "asset_id", name="uq_notebook_asset_link"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    item_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    item_type: Mapped[str] = mapped_column(String(32), nullable=False, default="asset_reference")
+    asset_id: Mapped[str] = mapped_column(ForeignKey("assets.id", ondelete="CASCADE"), nullable=False)
+
+    asset: Mapped[Asset] = relationship(back_populates="notebook_links")

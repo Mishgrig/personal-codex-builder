@@ -212,6 +212,88 @@ a {
   min-width: 126px;
 }
 
+.dropdown-trigger {
+  min-width: 140px;
+  justify-content: space-between;
+}
+
+.dropdown-trigger.wide {
+  width: 100%;
+  min-width: 280px;
+}
+
+.dropdown-trigger-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+}
+
+.dropdown-list {
+  display: grid;
+  gap: 6px;
+}
+
+.dropdown-list.compact {
+  gap: 10px;
+}
+
+.dropdown-item {
+  width: 100%;
+  border: 1px solid rgba(201, 161, 76, 0.18);
+  background: rgba(10, 16, 32, 0.58);
+  color: var(--text);
+  border-radius: 12px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  text-align: left;
+}
+
+.dropdown-item.active,
+.dropdown-item:hover {
+  border-color: var(--gold);
+}
+
+.dropdown-item-manage {
+  color: var(--gold);
+}
+
+.dropdown-empty {
+  color: var(--muted);
+  padding: 6px 2px;
+}
+
+.filter-menu-row {
+  display: flex;
+  align-items: center;
+}
+
+.toggle-switch {
+  justify-content: flex-start;
+}
+
+.source-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.source-inline-link {
+  color: var(--accent);
+  font-size: 0.92rem;
+  text-decoration: none;
+  opacity: 0.92;
+}
+
+.source-inline-link:hover {
+  text-decoration: underline;
+}
+
 .search-shell {
   flex: 1;
   display: flex;
@@ -275,33 +357,6 @@ a {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.filters-shell {
-  position: relative;
-}
-
-.filters-shell summary {
-  list-style: none;
-}
-
-.filters-shell[open] .filters-popover {
-  display: grid;
-}
-
-.filters-popover {
-  display: none;
-  position: absolute;
-  right: 0;
-  top: calc(100% + 10px);
-  width: 320px;
-  padding: 14px;
-  gap: 12px;
-  background: rgba(7, 13, 27, 0.96);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: var(--shadow);
-  z-index: 30;
 }
 
 .popover-menu {
@@ -622,6 +677,86 @@ a {
   background: linear-gradient(180deg, rgba(20, 29, 58, 0.9), rgba(11, 18, 36, 0.93));
   box-shadow: var(--shadow);
   overflow: auto;
+}
+
+.notebook-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.notebook-item-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notebook-item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notebook-item-tab {
+  width: 100%;
+  border: 1px solid rgba(201, 161, 76, 0.2);
+  border-radius: 14px;
+  background: rgba(13, 21, 40, 0.76);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.notebook-item-tab.active {
+  border-color: rgba(216, 160, 38, 0.66);
+  box-shadow: inset 0 0 0 1px rgba(216, 160, 38, 0.2);
+}
+
+.notebook-item-tab-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(201, 161, 76, 0.12);
+  flex-shrink: 0;
+}
+
+.notebook-item-tab-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.notebook-item-tab-text small {
+  color: var(--muted);
+  text-transform: capitalize;
+}
+
+.notebook-item-tab-actions {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.notebook-item-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(8, 14, 28, 0.48);
+  border: 1px solid rgba(201, 161, 76, 0.14);
+}
+
+.notebook-plain-text {
+  min-height: 180px;
 }
 
 .notebook-reveal {
@@ -1140,6 +1275,29 @@ a {
 .font-size-input {
   width: 56px;
   text-align: center;
+}
+
+.color-palette-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(201, 161, 76, 0.16);
+  background: rgba(10, 16, 30, 0.72);
+}
+
+.color-swatch-button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: var(--swatch-color);
+}
+
+.color-swatch-button.highlight {
+  box-shadow: inset 0 0 0 2px rgba(5, 8, 18, 0.55);
 }
 
 .color-input-shell {

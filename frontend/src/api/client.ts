@@ -20,9 +20,11 @@ import type {
   WorkspaceCreatePayload,
   WorkspaceAssetHealth,
   WorkspaceExport,
+  WorkspaceDataExport,
   WorkspaceHealth,
   WorkspaceNotebook,
   WorkspaceRestoreResult,
+  WorkspaceRepairResult,
   WorkspaceSummary,
 } from "../types/models";
 
@@ -128,10 +130,32 @@ export const api = {
     request<WorkspaceExport>(`/workspaces/${workspaceSlug}/export`, {
       method: "POST",
     }),
+  exportWorkspaceData: (
+    workspaceSlug: string,
+    format: "json" | "csv" = "json",
+    includeAssetIds = false,
+    cardIds: number[] = [],
+  ) => {
+    const params = new URLSearchParams();
+    params.set("format", format);
+    if (includeAssetIds) params.set("include_asset_ids", "true");
+    if (cardIds.length) params.set("card_ids", cardIds.join(","));
+    return request<WorkspaceDataExport>(`/workspaces/${workspaceSlug}/data-export?${params.toString()}`);
+  },
   getWorkspaceHealth: (workspaceSlug: string) =>
     request<WorkspaceHealth>(`/workspaces/${workspaceSlug}/health`),
+  repairWorkspaceHealth: (workspaceSlug: string, action: string) =>
+    request<WorkspaceRepairResult>(`/workspaces/${workspaceSlug}/health/repair`, {
+      method: "POST",
+      json: { action },
+    }),
   getWorkspaceAssetHealth: (workspaceSlug: string) =>
     request<WorkspaceAssetHealth>(`/workspaces/${workspaceSlug}/asset-health`),
+  repairWorkspaceAssetHealth: (workspaceSlug: string, action: string) =>
+    request<WorkspaceRepairResult>(`/workspaces/${workspaceSlug}/asset-health/repair`, {
+      method: "POST",
+      json: { action },
+    }),
   listWorkspaceAssets: (workspaceSlug: string, q = "", assetType?: string) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
@@ -171,14 +195,48 @@ export const api = {
     request<CardSchema>(`/workspaces/${workspaceSlug}/schemas/${schema.id}`, { method: "PUT", json: schema }),
   listCardTypes: (workspaceSlug: string) =>
     request<CardTypeDefinition[]>(`/workspaces/${workspaceSlug}/card-types`),
-  getCardTypeTable: (workspaceSlug: string, cardTypeSlug: string, q = "") => {
+  getCardTypeTable: (
+    workspaceSlug: string,
+    cardTypeSlug: string,
+    q = "",
+    sortBy = "manual",
+    sortDir: "asc" | "desc" = "asc",
+    status = "",
+  ) => {
     const params = new URLSearchParams();
     if (q) params.set("q", q);
+    if (sortBy) params.set("sort_by", sortBy);
+    if (sortDir) params.set("sort_dir", sortDir);
+    if (status) params.set("status", status);
     const query = params.toString();
     return request<CardTypeTable>(
       `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/table${query ? `?${query}` : ""}`,
     );
   },
+  createCardTypeRow: (
+    workspaceSlug: string,
+    cardTypeSlug: string,
+    payload: { title: string; summary: string; status: string; values: Record<string, unknown> },
+  ) =>
+    request<CardTypeTable>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/rows`,
+      { method: "POST", json: payload },
+    ),
+  updateCardTypeRow: (
+    workspaceSlug: string,
+    cardTypeSlug: string,
+    cardId: number,
+    payload: { title: string; summary: string; status: string; values: Record<string, unknown> },
+  ) =>
+    request<CardTypeTable>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/rows/${cardId}`,
+      { method: "PATCH", json: payload },
+    ),
+  deleteCardTypeRow: (workspaceSlug: string, cardTypeSlug: string, cardId: number) =>
+    request<{ card_id: number; deleted: boolean }>(
+      `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/rows/${cardId}`,
+      { method: "DELETE" },
+    ),
   exportCardTypeStructure: (workspaceSlug: string, cardTypeSlug: string, format: "json" | "csv" | "xlsx" = "json") =>
     request<CardTypeStructureExport>(
       `/workspaces/${workspaceSlug}/card-types/${encodeURIComponent(cardTypeSlug)}/structure-export?format=${format}`,

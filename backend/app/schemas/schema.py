@@ -111,6 +111,21 @@ class CardTypeTableRead(BaseModel):
     rows: list[CardTypeTableRowRead] = Field(default_factory=list)
     total: int = 0
     q: str = ""
+    sort_by: str = "manual"
+    sort_dir: str = "asc"
+    status: str = ""
+
+
+class CardTypeRowWriteRequest(BaseModel):
+    title: str = "Untitled Card"
+    summary: str = ""
+    status: str = "draft"
+    values: dict[str, Any] = Field(default_factory=dict)
+
+
+class CardTypeRowDeleteRead(BaseModel):
+    card_id: int
+    deleted: bool = True
 
 
 class CardTypeStructureExportRead(BaseModel):

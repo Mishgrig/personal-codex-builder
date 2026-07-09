@@ -4,6 +4,8 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import { Eye, GripVertical, Plus, Save, Trash2 } from "lucide-react";
 import { api } from "../api/client";
+import { ConfirmDialog } from "../shared/components/ConfirmDialog";
+import { ToggleSwitch } from "../shared/components/ToggleSwitch";
 import { IconButton } from "../shared/components/IconButton";
 import { PopoverMenu } from "../shared/components/PopoverMenu";
 import type { CardSchema, SchemaField, TaxonomyTerm } from "../types/models";
@@ -213,11 +215,31 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
                     <strong>{liveTableName}</strong>
                   </div>
                   <div className="meta-item">
-                    <span>Internal icon</span>
-                    <strong>{schemaDraft.icon || "✦"}</strong>
+                    <span>Status</span>
+                    <strong>{schemaDraft.is_active ? "Active" : "Inactive"}</strong>
                   </div>
                 </div>
               ) : null}
+
+              <div className="field-row">
+                <label className="tiny-toggle">
+                  <input
+                    type="checkbox"
+                    checked={schemaDraft.is_active}
+                    onChange={(event) => setSchemaDraft((current) => ({ ...current, is_active: event.target.checked }))}
+                  />
+                  <span>Active card type</span>
+                </label>
+                <label className="field-stack">
+                  <span>Icon</span>
+                  <input
+                    className="themed-input"
+                    value={schemaDraft.icon}
+                    onChange={(event) => setSchemaDraft((current) => ({ ...current, icon: event.target.value }))}
+                    placeholder="✦"
+                  />
+                </label>
+              </div>
 
               <div className="section-header">
                 <h3>Fields</h3>
@@ -420,133 +442,172 @@ function FieldCard({
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const style = { transform: CSS.Transform.toString(transform), transition };
   const visible = field.show_in_card || field.show_in_list;
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
-    <div ref={setNodeRef} style={style} className="field-card studio-field-card">
-      <div className="section-header">
-        <div className="row-actions">
-          <button className="drag-handle-button" type="button" aria-label="Reorder field" {...attributes} {...listeners}>
-            <GripVertical size={14} />
-          </button>
-          <strong>{field.label || "New field"}</strong>
-        </div>
-        <div className="row-actions">
-          <PopoverMenu icon={<Eye size={14} />} label="Field behavior">
-            <label className="tiny-toggle">
-              <input type="checkbox" checked={field.show_in_card} onChange={(event) => onChange({ show_in_card: event.target.checked })} />
-              <span>Show in card</span>
-            </label>
-            <label className="tiny-toggle">
-              <input type="checkbox" checked={field.show_in_list} onChange={(event) => onChange({ show_in_list: event.target.checked })} />
-              <span>Show in Atlas</span>
-            </label>
-            <label className="tiny-toggle">
-              <input type="checkbox" checked={field.show_in_filters} onChange={(event) => onChange({ show_in_filters: event.target.checked })} />
-              <span>Filterable</span>
-            </label>
-            {advancedMode ? (
-              <>
-                <label className="tiny-toggle">
-                  <input type="checkbox" checked={field.is_active} onChange={(event) => onChange({ is_active: event.target.checked })} />
-                  <span>Active field</span>
-                </label>
+    <>
+      <div ref={setNodeRef} style={style} className="field-card studio-field-card">
+        <div className="section-header">
+          <div className="row-actions">
+            <button className="drag-handle-button" type="button" aria-label="Reorder field" {...attributes} {...listeners}>
+              <GripVertical size={14} />
+            </button>
+            <strong>{field.label || "New field"}</strong>
+          </div>
+          <div className="row-actions">
+            <PopoverMenu icon={<Eye size={14} />} label="Field behavior">
+              <ToggleSwitch checked={field.show_in_card} label="Show in card" onChange={(checked) => onChange({ show_in_card: checked })} />
+              <ToggleSwitch checked={field.show_in_list} label="Show in Atlas / lists" onChange={(checked) => onChange({ show_in_list: checked })} />
+              <ToggleSwitch checked={field.show_in_filters} label="Show in filters" onChange={(checked) => onChange({ show_in_filters: checked })} />
+              <ToggleSwitch checked={field.is_active} label="Active field" onChange={(checked) => onChange({ is_active: checked })} />
+              {advancedMode ? (
                 <p className="helper-text no-top-margin">
-                  Table View, export, import, and search flags follow the saved card type definition in the SQLite bridge layer.
+                  This studio currently edits the schema bridge fields directly, so only the toggles shown here persist as separate flags.
                 </p>
-              </>
-            ) : null}
-          </PopoverMenu>
-          <IconButton title="Delete field" aria-label="Delete field" danger onClick={onDelete}>
-            <Trash2 size={14} />
-          </IconButton>
+              ) : null}
+            </PopoverMenu>
+            <IconButton title="Delete field" aria-label="Delete field" danger onClick={() => setConfirmDelete(true)}>
+              <Trash2 size={14} />
+            </IconButton>
+          </div>
         </div>
-      </div>
 
-      <div className="field-row">
+        <div className="field-row">
+          <label className="field-stack">
+            <span>Name</span>
+            <input
+              className="themed-input"
+              value={field.label}
+              onChange={(event) => onChange({ label: event.target.value })}
+              placeholder="Region"
+            />
+          </label>
+          <label className="field-stack">
+            <span>Field slug</span>
+            <input
+              className="themed-input"
+              value={field.field_id}
+              onChange={(event) => onChange({ field_id: event.target.value })}
+              placeholder="region"
+            />
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="field-stack">
+            <span>Field type</span>
+            <select className="themed-select" value={field.kind} onChange={(event) => onChange({ kind: event.target.value })}>
+              {FIELD_TYPES.map((kind) => (
+                <option key={kind} value={kind}>
+                  {kind}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-stack">
+            <span>Visible</span>
+            <select
+              className="themed-select"
+              value={visible ? "visible" : "hidden"}
+              onChange={(event) =>
+                onChange(
+                  event.target.value === "visible"
+                    ? { show_in_card: true, is_active: true }
+                    : { show_in_card: false, show_in_list: false, show_in_filters: false },
+                )
+              }
+            >
+              <option value="visible">Visible</option>
+              <option value="hidden">Hidden</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="field-row">
+          <label className="tiny-toggle">
+            <input type="checkbox" checked={field.required} onChange={(event) => onChange({ required: event.target.checked })} />
+            <span>Required</span>
+          </label>
+          <label className="tiny-toggle">
+            <input type="checkbox" checked={field.repeatable} onChange={(event) => onChange({ repeatable: event.target.checked })} />
+            <span>Repeatable</span>
+          </label>
+          <label className="tiny-toggle">
+            <input type="checkbox" checked={field.is_active} onChange={(event) => onChange({ is_active: event.target.checked })} />
+            <span>Active</span>
+          </label>
+        </div>
+
         <label className="field-stack">
-          <span>Name</span>
-          <input
-            className="themed-input"
-            value={field.label}
-            onChange={(event) => onChange({ label: event.target.value })}
-            placeholder="Region"
+          <span>Description</span>
+          <textarea
+            className="themed-textarea"
+            rows={3}
+            value={field.description}
+            onChange={(event) => onChange({ description: event.target.value })}
+            placeholder="What this field stores."
           />
         </label>
+
         <label className="field-stack">
-          <span>Field slug</span>
+          <span>Help text</span>
           <input
             className="themed-input"
-            value={field.field_id}
-            onChange={(event) => onChange({ field_id: event.target.value })}
-            placeholder="region"
+            value={field.placeholder}
+            onChange={(event) => onChange({ placeholder: event.target.value })}
+            placeholder="Shown inside the card editor."
           />
         </label>
+
+        {field.kind === "select" || field.kind === "multi_select" ? (
+          <label className="field-stack">
+            <span>Options</span>
+            <textarea
+              className="themed-textarea"
+              rows={4}
+              value={field.options.map((option) => `${option.label}=${option.value}`).join("\n")}
+              onChange={(event) => onChange({ options: parseOptions(event.target.value) })}
+              placeholder={"Visible label=value\nOpen=open\nClosed=closed"}
+            />
+          </label>
+        ) : null}
+
+        {advancedMode ? (
+          <div className="field-row">
+            <label className="field-stack">
+              <span>Default value (JSON)</span>
+              <input
+                className="themed-input"
+                value={field.default_value == null ? "" : JSON.stringify(field.default_value)}
+                onChange={(event) => onChange({ default_value: parseJsonValue(event.target.value) })}
+                placeholder='"draft" or 0 or true'
+              />
+            </label>
+            <div className="meta-grid">
+              <div className="meta-item">
+                <span>SQL column name</span>
+                <strong>{`field_${safeSlug(field.field_id || field.label, "value").replaceAll("-", "_")}`}</strong>
+              </div>
+              <div className="meta-item">
+                <span>Filter behavior</span>
+                <strong>{field.show_in_filters ? "Filterable in current UI" : "Not shown in filters"}</strong>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
 
-      <div className="field-row">
-        <label className="field-stack">
-          <span>Field type</span>
-          <select className="themed-select" value={field.kind} onChange={(event) => onChange({ kind: event.target.value })}>
-            {FIELD_TYPES.map((kind) => (
-              <option key={kind} value={kind}>
-                {kind}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field-stack">
-          <span>Visible</span>
-          <select
-            className="themed-select"
-            value={visible ? "visible" : "hidden"}
-            onChange={(event) =>
-              onChange(
-                event.target.value === "visible"
-                  ? { show_in_card: true }
-                  : { show_in_card: false, show_in_list: false, show_in_filters: false },
-              )
-            }
-          >
-            <option value="visible">Visible</option>
-            <option value="hidden">Hidden</option>
-          </select>
-        </label>
-      </div>
-
-      <div className="field-row">
-        <label className="tiny-toggle">
-          <input type="checkbox" checked={field.required} onChange={(event) => onChange({ required: event.target.checked })} />
-          <span>Required</span>
-        </label>
-        <label className="tiny-toggle">
-          <input type="checkbox" checked={field.repeatable} onChange={(event) => onChange({ repeatable: event.target.checked })} />
-          <span>Repeatable</span>
-        </label>
-      </div>
-
-      <label className="field-stack">
-        <span>Help text</span>
-        <input
-          className="themed-input"
-          value={field.placeholder}
-          onChange={(event) => onChange({ placeholder: event.target.value })}
-          placeholder="Shown inside the card editor."
+      {confirmDelete ? (
+        <ConfirmDialog
+          title="Delete field?"
+          description={`"${field.label || "New field"}" will be removed from this card type draft.`}
+          confirmLabel="Delete field"
+          danger
+          onConfirm={onDelete}
+          onCancel={() => setConfirmDelete(false)}
         />
-      </label>
-
-      {advancedMode ? (
-        <div className="meta-grid">
-          <div className="meta-item">
-            <span>SQL column name</span>
-            <strong>{`field_${safeSlug(field.field_id || field.label, "value").replaceAll("-", "_")}`}</strong>
-          </div>
-          <div className="meta-item">
-            <span>Search behavior</span>
-            <strong>{field.show_in_filters ? "Indexed for filters" : "Visible only"}</strong>
-          </div>
-        </div>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -590,4 +651,29 @@ function updateField(
       currentIndex === index ? { ...field, ...patch } : field,
     ),
   }));
+}
+
+function parseOptions(value: string) {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [labelPart, valuePart] = line.includes("=") ? line.split("=") : [line, line];
+      return {
+        label: labelPart.trim(),
+        value: (valuePart ?? labelPart).trim(),
+      };
+    });
+}
+
+function parseJsonValue(value: string): unknown {
+  if (!value.trim()) {
+    return null;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }

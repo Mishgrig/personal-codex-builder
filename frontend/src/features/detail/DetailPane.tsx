@@ -3,6 +3,8 @@ import { Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { queryClient } from "../../app/queryClient";
 import { AutoResizeTextarea } from "../../shared/components/AutoResizeTextarea";
+import { CollapsibleSection } from "../../shared/components/CollapsibleSection";
+import { ConfirmDialog } from "../../shared/components/ConfirmDialog";
 import { IconButton } from "../../shared/components/IconButton";
 import { GallerySection } from "../media/GallerySection";
 import { AttachmentsSection } from "../media/AttachmentsSection";
@@ -43,6 +45,7 @@ export function DetailPane({
   const [draft, setDraft] = useState<CardDetail | null>(card);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [coverPreviewOpen, setCoverPreviewOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const lastSavedSnapshot = useRef("");
 
   useEffect(() => {
@@ -120,7 +123,7 @@ export function DetailPane({
           <h2>Card Detail</h2>
           <p>{saveLabel(saveState, draft.updated_at, draft.created_at)}</p>
         </div>
-        <IconButton danger title="Delete card" onClick={() => void onDeleteCurrent()}>
+        <IconButton danger title="Delete card" onClick={() => setDeleteConfirmOpen(true)}>
           <Trash2 size={16} />
         </IconButton>
       </div>
@@ -255,10 +258,7 @@ export function DetailPane({
         </div>
 
         {schema?.fields.length ? (
-          <details className="detail-section" open>
-            <summary className="section-header">
-              <h3>Fields</h3>
-            </summary>
+          <CollapsibleSection title="Fields">
             <div className="dynamic-grid">
               {schema.fields
                 .filter((field) => field.show_in_card)
@@ -280,21 +280,15 @@ export function DetailPane({
                   />
                 ))}
             </div>
-          </details>
+          </CollapsibleSection>
         ) : null}
 
-        <details className="detail-section" open>
-          <summary className="section-header">
-            <h3>Gallery</h3>
-          </summary>
+        <CollapsibleSection title="Gallery">
           <GallerySection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
-        </details>
-        <details className="detail-section" open>
-          <summary className="section-header">
-            <h3>Attachments</h3>
-          </summary>
+        </CollapsibleSection>
+        <CollapsibleSection title="Attachments">
           <AttachmentsSection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
-        </details>
+        </CollapsibleSection>
 
         {query && searchExcerpt ? (
           <section className="detail-section">
@@ -305,10 +299,7 @@ export function DetailPane({
           </section>
         ) : null}
 
-        <details className="detail-section" open>
-          <summary className="section-header">
-            <h3>Body</h3>
-          </summary>
+        <CollapsibleSection title="Body">
           <Suspense fallback={<div className="editor-shell loading">Preparing editor…</div>}>
             <RichTextEditor
               value={draft.body_json}
@@ -324,18 +315,12 @@ export function DetailPane({
               }
             />
           </Suspense>
-        </details>
+        </CollapsibleSection>
 
-        <details className="detail-section" open>
-          <summary className="section-header">
-            <h3>Sources</h3>
-          </summary>
+        <CollapsibleSection title="Sources">
           <SourcesSection workspaceSlug={workspaceSlug} card={draft} onRefresh={onRefresh} />
-        </details>
-        <details className="detail-section" open>
-          <summary className="section-header">
-            <h3>Relations</h3>
-          </summary>
+        </CollapsibleSection>
+        <CollapsibleSection title="Relations">
           <RelationsSection
             workspaceSlug={workspaceSlug}
             card={draft}
@@ -343,7 +328,7 @@ export function DetailPane({
             onUpdated={applyRemoteCard}
             onOpenCard={onOpenCard}
           />
-        </details>
+        </CollapsibleSection>
 
       </article>
 
@@ -353,6 +338,19 @@ export function DetailPane({
             <img src={coverUrl} alt={draft.title} className="detail-cover-preview" />
           </div>
         </div>
+      ) : null}
+      {deleteConfirmOpen ? (
+        <ConfirmDialog
+          title="Archive card"
+          description="The card will be hidden from normal views but stay recoverable in the local database."
+          confirmLabel="Archive card"
+          danger
+          onCancel={() => setDeleteConfirmOpen(false)}
+          onConfirm={() => {
+            setDeleteConfirmOpen(false);
+            void onDeleteCurrent();
+          }}
+        />
       ) : null}
     </section>
   );
@@ -455,7 +453,6 @@ function snapshot(card: CardDetail) {
 function toPayload(card: CardDetail) {
   return {
     title: card.title,
-    slug: card.slug,
     summary: card.summary,
     status: card.status,
     schema_id: card.schema_id,
@@ -467,7 +464,16 @@ function toPayload(card: CardDetail) {
 }
 
 function formatDateTime(value: string | undefined) {
-  return value ? new Date(value).toLocaleString("en-GB") : "Unknown";
+  if (!value) {
+    return "Unknown";
+  }
+  const date = new Date(value);
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const year = date.getFullYear();
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${day}.${month}.${year} ${hours}:${minutes}`;
 }
 
 function saveLabel(saveState: SaveState, updatedAt?: string, createdAt?: string) {

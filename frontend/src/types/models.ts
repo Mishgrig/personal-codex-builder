@@ -33,9 +33,26 @@ export interface WorkspaceExport {
   path: string;
 }
 
+export interface WorkspaceDataExport {
+  filename: string;
+  format: string;
+  scope: string;
+  include_asset_ids: boolean;
+  row_count: number;
+  content_text: string;
+  content_json: Array<Record<string, unknown>>;
+}
+
 export interface WorkspaceRestoreResult {
   workspace: WorkspaceSummary;
   safety_backup: WorkspaceBackup;
+}
+
+export interface WorkspaceRepairResult {
+  status: string;
+  message: string;
+  repaired_count: number;
+  skipped_count: number;
 }
 
 export interface WorkspaceHealthCheck {
@@ -91,7 +108,35 @@ export interface WorkspaceAssetHealth {
   categories: Record<string, WorkspaceHealthCategory>;
 }
 
+export type WorkspaceNotebookItemType =
+  | "rich_text"
+  | "plain_text"
+  | "table"
+  | "image"
+  | "file"
+  | "link"
+  | "card_reference"
+  | "asset_reference";
+
+export interface WorkspaceNotebookItem {
+  id: string;
+  type: WorkspaceNotebookItemType | string;
+  title: string;
+  sort_order: number;
+  body_json?: Record<string, unknown>;
+  body_text?: string;
+  text?: string;
+  columns?: string[];
+  rows?: string[][];
+  asset_id?: string;
+  href?: string;
+  label?: string;
+  card_id?: number | null;
+  note?: string;
+}
+
 export interface WorkspaceNotebook {
+  items: WorkspaceNotebookItem[];
   body_json: Record<string, unknown>;
   body_text: string;
 }
@@ -249,6 +294,9 @@ export interface CardTypeTable {
   rows: CardTypeTableRow[];
   total: number;
   q: string;
+  sort_by: string;
+  sort_dir: string;
+  status: string;
 }
 
 export interface CardTypeStructureExport {

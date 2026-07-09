@@ -43,7 +43,14 @@ export function SourcesSection({ workspaceSlug, card, onRefresh }: SourcesSectio
         {card.sources.map((source) => (
           <div className="source-card" key={source.id}>
             <div>
-              <strong>{source.title}</strong>
+              <div className="source-title-row">
+                <strong>{source.title}</strong>
+                {source.url ? (
+                  <a className="source-inline-link" href={source.url} target="_blank" rel="noreferrer">
+                    {source.url}
+                  </a>
+                ) : null}
+              </div>
               <p>{source.note || source.source_type}</p>
               {source.assets.length ? (
                 <div className="asset-row-actions">
@@ -79,11 +86,6 @@ export function SourcesSection({ workspaceSlug, card, onRefresh }: SourcesSectio
               ) : null}
             </div>
             <div className="row-actions">
-              {source.url ? (
-                <a className="icon-button" href={source.url} target="_blank" rel="noreferrer" title="Open source">
-                  <ExternalLink size={14} />
-                </a>
-              ) : null}
               <label className="icon-button" title="Add file to source">
                 <FilePlus2 size={14} />
                 <input

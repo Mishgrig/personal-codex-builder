@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import re
@@ -10,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.exceptions import ValidationAPIError
 from app.core.paths import (
     LEGACY_WORKSPACE_METADATA_FILENAME,
@@ -18,11 +22,14 @@ from app.core.paths import (
     app_safety_backups_dir,
     legacy_workspace_metadata_path,
     resolve_workspace_db_path,
+    workspace_assets_dir,
     workspace_dir,
     workspace_exports_dir,
     workspace_files_dir,
     workspace_metadata_path,
 )
+from app.models.workspace import Card
+from app.services.card_service import _active_card_clause, _card_query, serialize_card_detail
 from app.services.backup_service import _copy_sqlite_database
 
 logger = logging.getLogger(__name__)
@@ -42,6 +49,7 @@ def _archive_workspace_contents(slug: str, archive_path: Path) -> None:
     metadata_path = workspace_metadata_path(slug)
     legacy_metadata_path = legacy_workspace_metadata_path(slug)
     files_dir = workspace_files_dir(slug)
+    assets_dir = workspace_assets_dir(slug)
 
     archive_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -60,6 +68,10 @@ def _archive_workspace_contents(slug: str, archive_path: Path) -> None:
                 for file_path in files_dir.rglob("*"):
                     if file_path.is_file():
                         archive.write(file_path, arcname=file_path.relative_to(files_dir.parent).as_posix())
+            if assets_dir.exists():
+                for file_path in assets_dir.rglob("*"):
+                    if file_path.is_file():
+                        archive.write(file_path, arcname=file_path.relative_to(assets_dir.parent).as_posix())
 
 
 def create_workspace_export(slug: str) -> dict[str, Any]:
@@ -135,3 +147,97 @@ def extract_workspace_archive(archive_path: Path) -> tuple[Path, dict[str, Any]]
     except Exception:
         shutil.rmtree(temp_root, ignore_errors=True)
         raise
+
+
+def export_workspace_data(
+    session: Session,
+    slug: str,
+    *,
+    export_format: str = "json",
+    include_asset_ids: bool = False,
+    card_ids: list[int] | None = None,
+) -> dict[str, Any]:
+    stmt = _card_query().where(_active_card_clause()).order_by(Card.sort_order.asc(), Card.id.asc())
+    scope = "selected_cards" if card_ids else "all_workspace_data"
+    if card_ids:
+        stmt = stmt.where(Card.id.in_(card_ids))
+    cards = list(session.execute(stmt).scalars().unique())
+    rows: list[dict[str, Any]] = []
+    for card in cards:
+        payload = serialize_card_detail(card).model_dump(mode="json", by_alias=True)
+        if not include_asset_ids:
+            for asset_group in ("gallery", "attachments"):
+                for asset in payload.get(asset_group, []):
+                    asset.pop("id", None)
+            for source in payload.get("sources", []):
+                for asset in source.get("assets", []):
+                    asset.pop("id", None)
+            payload["cover_asset_id"] = None
+        rows.append(payload)
+
+    export_format = export_format.lower()
+    timestamp = _now().strftime("%Y%m%dT%H%M%SZ")
+    filename_base = f"{slug}-{scope}-{timestamp}"
+    if export_format == "json":
+        return {
+            "filename": f"{filename_base}.json",
+            "format": "json",
+            "scope": scope,
+            "include_asset_ids": include_asset_ids,
+            "row_count": len(rows),
+            "content_json": rows,
+            "content_text": "",
+        }
+    if export_format == "csv":
+        buffer = io.StringIO()
+        headers = [
+            "card_id",
+            "uid",
+            "slug",
+            "title",
+            "summary",
+            "status",
+            "schema_id",
+            "schema_label",
+            "body_text",
+            "cover_asset_id",
+            "dynamic_fields_json",
+            "taxonomy_terms_json",
+            "gallery_json",
+            "attachments_json",
+            "sources_json",
+            "relations_json",
+        ]
+        writer = csv.DictWriter(buffer, fieldnames=headers)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "card_id": row.get("id"),
+                    "uid": row.get("uid"),
+                    "slug": row.get("slug"),
+                    "title": row.get("title"),
+                    "summary": row.get("summary"),
+                    "status": row.get("status"),
+                    "schema_id": row.get("schema_id"),
+                    "schema_label": row.get("schema_label"),
+                    "body_text": row.get("body_text"),
+                    "cover_asset_id": row.get("cover_asset_id"),
+                    "dynamic_fields_json": json.dumps(row.get("dynamic_fields", {}), ensure_ascii=False),
+                    "taxonomy_terms_json": json.dumps(row.get("taxonomy_terms", []), ensure_ascii=False),
+                    "gallery_json": json.dumps(row.get("gallery", []), ensure_ascii=False),
+                    "attachments_json": json.dumps(row.get("attachments", []), ensure_ascii=False),
+                    "sources_json": json.dumps(row.get("sources", []), ensure_ascii=False),
+                    "relations_json": json.dumps(row.get("relations", []), ensure_ascii=False),
+                }
+            )
+        return {
+            "filename": f"{filename_base}.csv",
+            "format": "csv",
+            "scope": scope,
+            "include_asset_ids": include_asset_ids,
+            "row_count": len(rows),
+            "content_json": [],
+            "content_text": buffer.getvalue(),
+        }
+    raise ValidationAPIError("Unsupported data export format.", details={"supported": ["json", "csv"]})

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.exceptions import NotFoundError, ValidationAPIError
 from app.schemas.card import CardCreate, CardUpdate
 from app.models.workspace import (
+    Asset,
     CardSchema,
     CardRegistry,
     CardTypeDefinition,
@@ -238,6 +239,18 @@ def list_card_types(session: Session) -> list[dict[str, Any]]:
 
 
 def get_card_type_table(session: Session, card_type_slug: str, *, q: str = "") -> dict[str, Any]:
+    return get_card_type_table_with_filters(session, card_type_slug, q=q)
+
+
+def get_card_type_table_with_filters(
+    session: Session,
+    card_type_slug: str,
+    *,
+    q: str = "",
+    sort_by: str = "manual",
+    sort_dir: str = "asc",
+    status: str = "",
+) -> dict[str, Any]:
     definition = _get_card_type_or_raise(session, card_type_slug)
     fields = [field for field in definition.fields if field.is_active and field.include_in_table_view]
 
@@ -255,6 +268,9 @@ def get_card_type_table(session: Session, card_type_slug: str, *, q: str = "") -
 
     where_sql = "WHERE cards_registry.card_type_slug = :card_type_slug AND cards_registry.deleted_at IS NULL"
     params: dict[str, Any] = {"card_type_slug": definition.slug}
+    if status.strip():
+        params["status"] = status.strip()
+        where_sql += " AND cards.status = :status"
     if q.strip():
         params["q"] = f"%{q.strip().lower()}%"
         where_sql += (
@@ -268,6 +284,21 @@ def get_card_type_table(session: Session, card_type_slug: str, *, q: str = "") -
             )
         where_sql += ")"
 
+    order_sql = "cards.sort_order ASC, cards.id ASC"
+    if sort_by == "title":
+        order_sql = f"cards.title {'DESC' if sort_dir == 'desc' else 'ASC'}"
+    elif sort_by == "status":
+        order_sql = f"cards.status {'DESC' if sort_dir == 'desc' else 'ASC'}"
+    elif sort_by == "summary":
+        order_sql = f"cards.summary {'DESC' if sort_dir == 'desc' else 'ASC'}"
+    else:
+        selected_field = next((field for field in fields if field.field_slug == sort_by), None)
+        if selected_field is not None:
+            order_sql = (
+                f"{_escape_identifier(definition.table_name)}.{_escape_identifier(selected_field.sql_column_name)} "
+                f"{'DESC' if sort_dir == 'desc' else 'ASC'}, cards.sort_order ASC, cards.id ASC"
+            )
+
     query = text(
         f"""
         SELECT {", ".join(select_columns)}
@@ -276,7 +307,7 @@ def get_card_type_table(session: Session, card_type_slug: str, *, q: str = "") -
         LEFT JOIN {_escape_identifier(definition.table_name)}
             ON {_escape_identifier(definition.table_name)}.card_id = cards.id
         {where_sql}
-        ORDER BY cards.sort_order ASC, cards.id ASC
+        ORDER BY {order_sql}
         """
     )
     rows = session.execute(query, params).mappings().all()
@@ -311,7 +342,97 @@ def get_card_type_table(session: Session, card_type_slug: str, *, q: str = "") -
         "rows": row_items,
         "total": len(row_items),
         "q": q,
+        "sort_by": sort_by,
+        "sort_dir": sort_dir,
+        "status": status,
     }
+
+
+def create_card_type_row(session: Session, card_type_slug: str, *, title: str, summary: str, status: str, values: dict[str, Any]) -> dict[str, Any]:
+    from app.schemas.card import CardUpdate
+    from app.services.card_service import create_card, update_card
+
+    definition = _get_card_type_or_raise(session, card_type_slug)
+    created_card = create_card(
+        session,
+        CardCreate(
+            title=title or "Untitled Card",
+            summary=summary,
+            status=status or "draft",
+            schema_id=definition.slug,
+            taxonomy_term_ids=[],
+        ),
+    )
+    updated_card = update_card(
+        session,
+        created_card.id,
+        CardUpdate(
+            title=title or created_card.title,
+            summary=summary,
+            status=status or "draft",
+            schema_id=definition.slug,
+            dynamic_fields=values,
+        ),
+    )
+    row = next((item for item in get_card_type_table_with_filters(session, definition.slug)["rows"] if item["card_id"] == updated_card.id), None)
+    return row or {
+        "card_id": updated_card.id,
+        "registry_id": updated_card.id,
+        "title": updated_card.title,
+        "summary": updated_card.summary,
+        "status": updated_card.status,
+        "values": updated_card.dynamic_fields,
+    }
+
+
+def update_card_type_row(
+    session: Session,
+    card_type_slug: str,
+    card_id: int,
+    *,
+    title: str | None,
+    summary: str | None,
+    status: str | None,
+    values: dict[str, Any],
+) -> dict[str, Any]:
+    from app.schemas.card import CardUpdate
+    from app.services.card_service import get_card, update_card
+
+    definition = _get_card_type_or_raise(session, card_type_slug)
+    existing = get_card(session, card_id)
+    if (existing.schema_id or "general") != definition.slug:
+        raise NotFoundError("Card type row was not found.", code="CARD_TYPE_ROW_NOT_FOUND")
+    updated_card = update_card(
+        session,
+        card_id,
+        CardUpdate(
+            title=title,
+            summary=summary,
+            status=status,
+            schema_id=definition.slug,
+            dynamic_fields=values,
+        ),
+    )
+    row = next((item for item in get_card_type_table_with_filters(session, definition.slug)["rows"] if item["card_id"] == updated_card.id), None)
+    return row or {
+        "card_id": updated_card.id,
+        "registry_id": updated_card.id,
+        "title": updated_card.title,
+        "summary": updated_card.summary,
+        "status": updated_card.status,
+        "values": updated_card.dynamic_fields,
+    }
+
+
+def soft_delete_card_type_row(session: Session, card_type_slug: str, card_id: int) -> dict[str, Any]:
+    from app.services.card_service import delete_card, get_card
+
+    definition = _get_card_type_or_raise(session, card_type_slug)
+    existing = get_card(session, card_id)
+    if (existing.schema_id or "general") != definition.slug:
+        raise NotFoundError("Card type row was not found.", code="CARD_TYPE_ROW_NOT_FOUND")
+    delete_card(session, card_id)
+    return {"card_id": card_id, "deleted": True}
 
 
 def export_card_type_structure(session: Session, card_type_slug: str, *, export_format: str) -> dict[str, Any]:
@@ -406,17 +527,30 @@ def export_card_type_structure(session: Session, card_type_slug: str, *, export_
     raise ValidationAPIError("Unsupported export format.", details={"supported": ["json", "csv", "xlsx"]})
 
 
-def _parse_import_rows(*, content_text: str, content_base64: str, import_format: str) -> list[dict[str, Any]]:
+def _parse_import_payload(
+    *,
+    content_text: str,
+    content_base64: str,
+    import_format: str,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     import_format = import_format.lower()
     if import_format == "json":
         parsed = json.loads(content_text or "[]")
+        if isinstance(parsed, dict):
+            rows = parsed.get("rows", [])
+            asset_files = parsed.get("asset_files", [])
+            if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+                raise ValidationAPIError("JSON bundle import must contain a rows list.")
+            if not isinstance(asset_files, list) or any(not isinstance(item, dict) for item in asset_files):
+                raise ValidationAPIError("JSON bundle import asset_files must be a list of objects.")
+            return rows, asset_files
         if not isinstance(parsed, list) or any(not isinstance(row, dict) for row in parsed):
             raise ValidationAPIError("JSON import must be a list of objects.")
-        return parsed
+        return parsed, []
     if import_format == "csv":
         buffer = io.StringIO(content_text)
         reader = csv.DictReader(buffer)
-        return [dict(row) for row in reader]
+        return [dict(row) for row in reader], []
     if import_format == "xlsx":
         if not content_base64:
             raise ValidationAPIError("XLSX import requires binary workbook content.")
@@ -435,7 +569,7 @@ def _parse_import_rows(*, content_text: str, content_base64: str, import_format:
                     if headers[index]
                 }
             )
-        return parsed_rows
+        return parsed_rows, []
     raise ValidationAPIError("Unsupported import format.", details={"supported": ["json", "csv", "xlsx"]})
 
 
@@ -445,6 +579,9 @@ def _import_mapping(definition: CardTypeDefinition) -> dict[str, str]:
         "title": "title",
         "summary": "summary",
         "status": "status",
+        "cover_asset_id": "cover_asset_id",
+        "gallery_asset_ids": "gallery_asset_ids",
+        "attachment_asset_ids": "attachment_asset_ids",
     }
     for field in definition.fields:
         if not field.is_active or not field.allow_import:
@@ -464,7 +601,7 @@ def preview_card_type_import(
     content_base64: str = "",
 ) -> dict[str, Any]:
     definition = _get_card_type_or_raise(session, card_type_slug)
-    rows = _parse_import_rows(
+    rows, _asset_files = _parse_import_payload(
         content_text=content_text,
         content_base64=content_base64,
         import_format=import_format,
@@ -491,7 +628,7 @@ def preview_card_type_import(
 
 
 def _coerce_import_value(field: CardTypeField, value: Any) -> Any:
-    if value in {"", None}:
+    if value is None or value == "":
         return None
     if field.field_type in {"number", "rating"}:
         return float(value)
@@ -510,11 +647,13 @@ def apply_card_type_import(
     session: Session,
     card_type_slug: str,
     *,
+    workspace_slug: str,
     import_format: str,
     content_text: str,
     content_base64: str = "",
 ) -> dict[str, Any]:
     from app.services.card_service import create_card, get_card, update_card
+    from app.services.file_service import attach_existing_asset, register_imported_asset
 
     definition = _get_card_type_or_raise(session, card_type_slug)
     preview = preview_card_type_import(
@@ -524,7 +663,7 @@ def apply_card_type_import(
         content_text=content_text,
         content_base64=content_base64,
     )
-    rows = _parse_import_rows(
+    rows, asset_files = _parse_import_payload(
         content_text=content_text,
         content_base64=content_base64,
         import_format=import_format,
@@ -539,6 +678,40 @@ def apply_card_type_import(
     updated = 0
     skipped = 0
     errors: list[str] = []
+    imported_assets: dict[str, str] = {}
+
+    for asset_file in asset_files:
+        try:
+            asset_id = str(asset_file.get("asset_id") or "").strip() or None
+            original_filename = str(asset_file.get("filename") or "").strip()
+            content_b64 = str(asset_file.get("content_base64") or "").strip()
+            mime_type = str(asset_file.get("mime_type") or "").strip()
+            if not original_filename or not content_b64:
+                raise ValidationAPIError("Bundled asset files require filename and content_base64.")
+            imported_asset = register_imported_asset(
+                session,
+                workspace_slug=workspace_slug,
+                original_filename=original_filename,
+                content=base64.b64decode(content_b64),
+                mime_type=mime_type,
+                preferred_asset_id=asset_id,
+            )
+            imported_assets[asset_id or imported_asset.id] = imported_asset.id
+        except Exception as exc:
+            skipped += 1
+            errors.append(f"Asset bundle item failed: {exc}")
+
+    def _resolve_asset_ids(value: Any) -> list[str]:
+        if value is None or value == "":
+            return []
+        raw_ids = value if isinstance(value, list) else [item.strip() for item in str(value).split(",") if item.strip()]
+        resolved: list[str] = []
+        for raw_id in raw_ids:
+            candidate = imported_assets.get(str(raw_id), str(raw_id))
+            if not session.get(Asset, candidate):
+                raise ValidationAPIError("Referenced asset id was not found.", details={"asset_id": candidate})
+            resolved.append(candidate)
+        return resolved
 
     for index, row in enumerate(rows, start=1):
         try:
@@ -547,8 +720,21 @@ def apply_card_type_import(
             summary = str(row.get("summary") or "").strip()
             status = str(row.get("status") or "draft").strip() or "draft"
             dynamic_fields: dict[str, Any] = {}
+            gallery_asset_ids: list[str] = []
+            attachment_asset_ids: list[str] = []
+            cover_asset_id: str | None = None
             for source_key, target_slug in matched_columns.items():
                 if target_slug in {"card_id", "title", "summary", "status"}:
+                    continue
+                if target_slug == "gallery_asset_ids":
+                    gallery_asset_ids = _resolve_asset_ids(row.get(source_key))
+                    continue
+                if target_slug == "attachment_asset_ids":
+                    attachment_asset_ids = _resolve_asset_ids(row.get(source_key))
+                    continue
+                if target_slug == "cover_asset_id":
+                    resolved_cover = _resolve_asset_ids(row.get(source_key))
+                    cover_asset_id = resolved_cover[0] if resolved_cover else None
                     continue
                 field = fields.get(target_slug)
                 if field is None:
@@ -570,6 +756,21 @@ def apply_card_type_import(
                             dynamic_fields=dynamic_fields,
                         ),
                     )
+                    for asset_id in gallery_asset_ids:
+                        attach_existing_asset(
+                            session,
+                            card_id=existing.id,
+                            asset_id=asset_id,
+                            role="gallery",
+                            set_as_cover=cover_asset_id == asset_id,
+                        )
+                    for asset_id in attachment_asset_ids:
+                        attach_existing_asset(
+                            session,
+                            card_id=existing.id,
+                            asset_id=asset_id,
+                            role="attachment",
+                        )
                     updated += 1
                     continue
                 except Exception:
@@ -595,6 +796,21 @@ def apply_card_type_import(
                     schema_id=definition.slug,
                 ),
             )
+            for asset_id in gallery_asset_ids:
+                attach_existing_asset(
+                    session,
+                    card_id=created_card.id,
+                    asset_id=asset_id,
+                    role="gallery",
+                    set_as_cover=cover_asset_id == asset_id,
+                )
+            for asset_id in attachment_asset_ids:
+                attach_existing_asset(
+                    session,
+                    card_id=created_card.id,
+                    asset_id=asset_id,
+                    role="attachment",
+                )
             created += 1
         except Exception as exc:
             skipped += 1

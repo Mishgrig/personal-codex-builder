@@ -1,22 +1,39 @@
-import { useState } from "react";
-import { Download, FileJson, Table2, Upload } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Download, FileJson, Plus, Table2, Trash2, Upload } from "lucide-react";
 import type {
   CardTypeDefinition,
   CardTypeImportPreview,
   CardTypeImportResult,
   CardTypeTable,
+  CardTypeTableRow,
 } from "../../types/models";
+
+interface RowDraft {
+  title: string;
+  summary: string;
+  status: string;
+  values: Record<string, unknown>;
+}
 
 interface TableViewPaneProps {
   cardTypes: CardTypeDefinition[];
   selectedCardTypeSlug: string | null;
   tableData: CardTypeTable | null;
   query: string;
+  sortBy: string;
+  sortDir: "asc" | "desc";
+  statusFilter: string;
   onCardTypeChange: (slug: string) => void;
   onQueryChange: (value: string) => void;
+  onSortChange: (sortBy: string, sortDir: "asc" | "desc") => void;
+  onStatusFilterChange: (value: string) => void;
   onSelectCard: (cardId: number) => void;
   onExportStructure: (format: "json" | "csv" | "xlsx") => Promise<void>;
   onExportTable: (format: "json" | "csv" | "xlsx") => Promise<void>;
+  onExportSelected: (selectedCardIds: number[], includeAssetIds: boolean) => Promise<void>;
+  onCreateRow: (payload: RowDraft) => Promise<CardTypeTable>;
+  onUpdateRow: (cardId: number, payload: RowDraft) => Promise<CardTypeTable>;
+  onDeleteRow: (cardId: number) => Promise<void>;
   onPreviewImport: (
     format: "csv" | "json" | "xlsx",
     contentText: string,
@@ -31,16 +48,32 @@ interface TableViewPaneProps {
   ) => Promise<CardTypeImportResult>;
 }
 
+const EMPTY_DRAFT: RowDraft = {
+  title: "",
+  summary: "",
+  status: "draft",
+  values: {},
+};
+
 export function TableViewPane({
   cardTypes,
   selectedCardTypeSlug,
   tableData,
   query,
+  sortBy,
+  sortDir,
+  statusFilter,
   onCardTypeChange,
   onQueryChange,
+  onSortChange,
+  onStatusFilterChange,
   onSelectCard,
   onExportStructure,
   onExportTable,
+  onExportSelected,
+  onCreateRow,
+  onUpdateRow,
+  onDeleteRow,
   onPreviewImport,
   onApplyImport,
 }: TableViewPaneProps) {
@@ -48,6 +81,84 @@ export function TableViewPane({
   const [importFormat, setImportFormat] = useState<"csv" | "json" | "xlsx">("csv");
   const [importPreview, setImportPreview] = useState<CardTypeImportPreview | null>(null);
   const [importResult, setImportResult] = useState<CardTypeImportResult | null>(null);
+  const [selectedRows, setSelectedRows] = useState<number[]>([]);
+  const [editingCardId, setEditingCardId] = useState<number | null>(null);
+  const [draft, setDraft] = useState<RowDraft>(EMPTY_DRAFT);
+  const [creatingRow, setCreatingRow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSelectedRows((current) =>
+      current.filter((cardId) => tableData?.rows.some((row) => row.card_id === cardId) ?? false),
+    );
+  }, [tableData]);
+
+  const allSelected = useMemo(() => {
+    if (!tableData?.rows.length) {
+      return false;
+    }
+    return tableData.rows.every((row) => selectedRows.includes(row.card_id));
+  }, [selectedRows, tableData]);
+
+  function beginEdit(row: CardTypeTableRow) {
+    setCreatingRow(false);
+    setEditingCardId(row.card_id);
+    setDraft({
+      title: row.title,
+      summary: row.summary,
+      status: row.status,
+      values: { ...row.values },
+    });
+    setInlineError(null);
+  }
+
+  function toggleSort(nextSortBy: string) {
+    if (sortBy === nextSortBy) {
+      onSortChange(nextSortBy, sortDir === "asc" ? "desc" : "asc");
+      return;
+    }
+    onSortChange(nextSortBy, "asc");
+  }
+
+  async function saveDraft(cardId?: number) {
+    setBusy(true);
+    setInlineError(null);
+    try {
+      if (creatingRow) {
+        await onCreateRow(draft);
+        setCreatingRow(false);
+      } else if (cardId) {
+        await onUpdateRow(cardId, draft);
+      }
+      setEditingCardId(null);
+      setDraft(EMPTY_DRAFT);
+    } catch (error) {
+      setInlineError(error instanceof Error ? error.message : "Could not save this row.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function archiveRow(cardId: number) {
+    if (!window.confirm("Archive this row? The card will stay recoverable in the database.")) {
+      return;
+    }
+    setBusy(true);
+    setInlineError(null);
+    try {
+      await onDeleteRow(cardId);
+      setSelectedRows((current) => current.filter((value) => value !== cardId));
+      if (editingCardId === cardId) {
+        setEditingCardId(null);
+        setDraft(EMPTY_DRAFT);
+      }
+    } catch (error) {
+      setInlineError(error instanceof Error ? error.message : "Could not archive this row.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="atlas-pane table-view-pane">
@@ -77,9 +188,47 @@ export function TableViewPane({
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder="Search this table"
           />
+          <select
+            className="mini-select"
+            value={statusFilter}
+            onChange={(event) => onStatusFilterChange(event.target.value)}
+          >
+            <option value="">All statuses</option>
+            <option value="draft">Draft</option>
+            <option value="active">Active</option>
+            <option value="archived">Archived</option>
+          </select>
           <button
             className="secondary-button"
-            disabled={!selectedCardTypeSlug}
+            disabled={!selectedCardTypeSlug || busy}
+            onClick={() => {
+              setCreatingRow(true);
+              setEditingCardId(null);
+              setDraft(EMPTY_DRAFT);
+            }}
+          >
+            <Plus size={14} />
+            Add row
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!selectedRows.length || busy}
+            onClick={() => void onExportSelected(selectedRows, false)}
+          >
+            <Download size={14} />
+            Export selected
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!selectedRows.length || busy}
+            onClick={() => void onExportSelected(selectedRows, true)}
+          >
+            <FileJson size={14} />
+            Selected + asset ids
+          </button>
+          <button
+            className="secondary-button"
+            disabled={!selectedCardTypeSlug || busy}
             onClick={() => void onExportStructure("csv")}
           >
             <Download size={14} />
@@ -87,23 +236,7 @@ export function TableViewPane({
           </button>
           <button
             className="secondary-button"
-            disabled={!selectedCardTypeSlug}
-            onClick={() => void onExportStructure("json")}
-          >
-            <FileJson size={14} />
-            Structure JSON
-          </button>
-          <button
-            className="secondary-button"
-            disabled={!selectedCardTypeSlug}
-            onClick={() => void onExportStructure("xlsx")}
-          >
-            <Download size={14} />
-            Structure XLSX
-          </button>
-          <button
-            className="secondary-button"
-            disabled={!selectedCardTypeSlug}
+            disabled={!selectedCardTypeSlug || busy}
             onClick={() => void onExportTable("csv")}
           >
             <Download size={14} />
@@ -111,15 +244,7 @@ export function TableViewPane({
           </button>
           <button
             className="secondary-button"
-            disabled={!selectedCardTypeSlug}
-            onClick={() => void onExportTable("xlsx")}
-          >
-            <Download size={14} />
-            Table XLSX
-          </button>
-          <button
-            className="secondary-button"
-            disabled={!selectedCardTypeSlug}
+            disabled={!selectedCardTypeSlug || busy}
             onClick={() => void onExportTable("json")}
           >
             <FileJson size={14} />
@@ -127,7 +252,7 @@ export function TableViewPane({
           </button>
           <button
             className="secondary-button"
-            disabled={!selectedCardTypeSlug}
+            disabled={!selectedCardTypeSlug || busy}
             onClick={() => {
               setImportPreview(null);
               setImportResult(null);
@@ -140,19 +265,44 @@ export function TableViewPane({
         </div>
       </div>
 
+      {inlineError ? <p className="inline-message">{inlineError}</p> : null}
+
       {tableData ? (
         <div className="table-view-shell">
           <div className="table-scroll">
             <table className="table-view-grid">
               <thead>
                 <tr>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th>Summary</th>
+                  <th>
+                    <input
+                      type="checkbox"
+                      checked={allSelected}
+                      onChange={(event) =>
+                        setSelectedRows(event.target.checked ? tableData.rows.map((row) => row.card_id) : [])
+                      }
+                    />
+                  </th>
+                  <th>
+                    <button className="table-sort-button" onClick={() => toggleSort("title")}>
+                      Title
+                    </button>
+                  </th>
+                  <th>
+                    <button className="table-sort-button" onClick={() => toggleSort("status")}>
+                      Status
+                    </button>
+                  </th>
+                  <th>
+                    <button className="table-sort-button" onClick={() => toggleSort("summary")}>
+                      Summary
+                    </button>
+                  </th>
                   {tableData.columns.map((column) => (
                     <th key={column.field_slug}>
                       <div className="table-column-head">
-                        <strong>{column.name}</strong>
+                        <button className="table-sort-button" onClick={() => toggleSort(column.field_slug)}>
+                          {column.name}
+                        </button>
                         <span>{column.field_type}</span>
                         <div className="table-column-flags">
                           {column.searchable ? <span className="tag-chip">search</span> : null}
@@ -162,21 +312,76 @@ export function TableViewPane({
                       </div>
                     </th>
                   ))}
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {tableData.rows.map((row) => (
-                  <tr key={row.card_id} onClick={() => onSelectCard(row.card_id)}>
-                    <td>{row.title}</td>
-                    <td>{row.status}</td>
-                    <td>{row.summary || "—"}</td>
-                    {tableData.columns.map((column) => (
-                      <td key={`${row.card_id}-${column.field_slug}`}>
-                        {formatTableValue(row.values[column.field_slug])}
+                {creatingRow ? (
+                  <EditableRow
+                    columns={tableData.columns}
+                    draft={draft}
+                    busy={busy}
+                    onChange={setDraft}
+                    onCancel={() => {
+                      setCreatingRow(false);
+                      setDraft(EMPTY_DRAFT);
+                      setInlineError(null);
+                    }}
+                    onSave={() => void saveDraft()}
+                  />
+                ) : null}
+                {tableData.rows.map((row) =>
+                  editingCardId === row.card_id ? (
+                    <EditableRow
+                      key={row.card_id}
+                      columns={tableData.columns}
+                      draft={draft}
+                      busy={busy}
+                      onChange={setDraft}
+                      onCancel={() => {
+                        setEditingCardId(null);
+                        setDraft(EMPTY_DRAFT);
+                        setInlineError(null);
+                      }}
+                      onSave={() => void saveDraft(row.card_id)}
+                    />
+                  ) : (
+                    <tr key={row.card_id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedRows.includes(row.card_id)}
+                          onChange={(event) =>
+                            setSelectedRows((current) =>
+                              event.target.checked
+                                ? [...current, row.card_id]
+                                : current.filter((value) => value !== row.card_id),
+                            )
+                          }
+                        />
                       </td>
-                    ))}
-                  </tr>
-                ))}
+                      <td onClick={() => onSelectCard(row.card_id)}>{row.title}</td>
+                      <td onClick={() => onSelectCard(row.card_id)}>{row.status}</td>
+                      <td onClick={() => onSelectCard(row.card_id)}>{row.summary || "—"}</td>
+                      {tableData.columns.map((column) => (
+                        <td key={`${row.card_id}-${column.field_slug}`} onClick={() => onSelectCard(row.card_id)}>
+                          {formatTableValue(row.values[column.field_slug])}
+                        </td>
+                      ))}
+                      <td>
+                        <div className="table-row-actions">
+                          <button className="secondary-button" disabled={busy} onClick={() => beginEdit(row)}>
+                            Edit
+                          </button>
+                          <button className="secondary-button danger" disabled={busy} onClick={() => void archiveRow(row.card_id)}>
+                            <Trash2 size={14} />
+                            Archive
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ),
+                )}
               </tbody>
             </table>
           </div>
@@ -207,6 +412,83 @@ export function TableViewPane({
         </div>
       ) : null}
     </section>
+  );
+}
+
+function EditableRow({
+  columns,
+  draft,
+  busy,
+  onChange,
+  onCancel,
+  onSave,
+}: {
+  columns: CardTypeTable["columns"];
+  draft: RowDraft;
+  busy: boolean;
+  onChange: (next: RowDraft) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  return (
+    <tr className="table-edit-row">
+      <td>•</td>
+      <td>
+        <input
+          className="themed-input"
+          value={draft.title}
+          onChange={(event) => onChange({ ...draft, title: event.target.value })}
+          placeholder="Title"
+        />
+      </td>
+      <td>
+        <select
+          className="mini-select"
+          value={draft.status}
+          onChange={(event) => onChange({ ...draft, status: event.target.value })}
+        >
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="archived">Archived</option>
+        </select>
+      </td>
+      <td>
+        <input
+          className="themed-input"
+          value={draft.summary}
+          onChange={(event) => onChange({ ...draft, summary: event.target.value })}
+          placeholder="Summary"
+        />
+      </td>
+      {columns.map((column) => (
+        <td key={column.field_slug}>
+          <input
+            className="themed-input"
+            value={String(draft.values[column.field_slug] ?? "")}
+            onChange={(event) =>
+              onChange({
+                ...draft,
+                values: {
+                  ...draft.values,
+                  [column.field_slug]: event.target.value,
+                },
+              })
+            }
+            placeholder={column.name}
+          />
+        </td>
+      ))}
+      <td>
+        <div className="table-row-actions">
+          <button className="primary-button" disabled={busy} onClick={onSave}>
+            Save
+          </button>
+          <button className="secondary-button" disabled={busy} onClick={onCancel}>
+            Cancel
+          </button>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -359,45 +641,29 @@ function ImportWizard({
             }
           }}
         >
-          Confirm import
+          Apply import
         </button>
-        <button className="secondary-button" onClick={onClose}>
+        <button className="secondary-button" disabled={busy} onClick={onClose}>
           Close
         </button>
       </div>
+
       {preview ? (
-        <div className="detail-section">
-          <div className="section-header">
-            <h3>Preview</h3>
-          </div>
-          <p>{preview.row_count} rows detected.</p>
-          <p>
-            Matched columns:{" "}
-            {Object.keys(preview.matched_columns).length
-              ? Object.entries(preview.matched_columns)
-                  .map(([source, target]) => `${source} -> ${target}`)
-                  .join(", ")
-              : "none"}
-          </p>
-          <p>Missing columns: {preview.missing_columns.length ? preview.missing_columns.join(", ") : "none"}</p>
-          <p>Unknown columns: {preview.unknown_columns.length ? preview.unknown_columns.join(", ") : "none"}</p>
-          {preview.sample_rows.length ? (
-            <div className="table-import-samples">
-              <h4>Sample rows</h4>
-              <pre>{JSON.stringify(preview.sample_rows, null, 2)}</pre>
-            </div>
-          ) : null}
+        <div className="import-preview">
+          <strong>{preview.row_count} rows detected</strong>
+          <p>Matched columns: {Object.keys(preview.matched_columns).length}</p>
+          {preview.missing_columns.length ? <p>Missing required columns: {preview.missing_columns.join(", ")}</p> : null}
+          {preview.unknown_columns.length ? <p>Unknown columns: {preview.unknown_columns.join(", ")}</p> : null}
         </div>
       ) : null}
+
       {result ? (
-        <div className="detail-section">
-          <div className="section-header">
-            <h3>Result</h3>
-          </div>
-          <p>Created: {result.rows_created}</p>
-          <p>Updated: {result.rows_updated}</p>
-          <p>Skipped: {result.rows_skipped}</p>
-          {result.errors.length ? <p>Errors: {result.errors.join(" | ")}</p> : null}
+        <div className="import-preview">
+          <strong>Import finished</strong>
+          <p>
+            Created {result.rows_created}, updated {result.rows_updated}, skipped {result.rows_skipped}
+          </p>
+          {result.errors.length ? <p>{result.errors.join(" | ")}</p> : null}
         </div>
       ) : null}
     </div>

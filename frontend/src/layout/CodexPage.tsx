@@ -29,6 +29,9 @@ export function CodexPage() {
   const notebookDividerRef = useRef<HTMLDivElement | null>(null);
   const [workspaceMessage, setWorkspaceMessage] = useState<string | null>(null);
   const [tableSearch, setTableSearch] = useState("");
+  const [tableSortBy, setTableSortBy] = useState("manual");
+  const [tableSortDir, setTableSortDir] = useState<"asc" | "desc">("asc");
+  const [tableStatusFilter, setTableStatusFilter] = useState("");
   const [assetLibrarySearch, setAssetLibrarySearch] = useState("");
   const [assetLibraryType, setAssetLibraryType] = useState("");
   const {
@@ -197,8 +200,24 @@ export function CodexPage() {
   }, [cardTypesQuery.data, selectedCardTypeSlug, setSelectedCardTypeSlug]);
 
   const tableDataQuery = useQuery({
-    queryKey: ["card-type-table", workspaceSlug, selectedCardTypeSlug, tableSearch],
-    queryFn: () => api.getCardTypeTable(workspaceSlug!, selectedCardTypeSlug!, tableSearch),
+    queryKey: [
+      "card-type-table",
+      workspaceSlug,
+      selectedCardTypeSlug,
+      tableSearch,
+      tableSortBy,
+      tableSortDir,
+      tableStatusFilter,
+    ],
+    queryFn: () =>
+      api.getCardTypeTable(
+        workspaceSlug!,
+        selectedCardTypeSlug!,
+        tableSearch,
+        tableSortBy,
+        tableSortDir,
+        tableStatusFilter,
+      ),
     enabled: Boolean(workspaceSlug && selectedCardTypeSlug),
   });
 
@@ -486,6 +505,15 @@ export function CodexPage() {
     setWorkspaceMessage(`Created ${exported.filename}`);
   }
 
+  async function exportCardTypeStructureForSlug(cardTypeSlug: string, format: "json" | "csv" | "xlsx") {
+    if (!workspaceSlug || !cardTypeSlug) {
+      return;
+    }
+    const exported = await api.exportCardTypeStructure(workspaceSlug, cardTypeSlug, format);
+    downloadExportArtifact(exported);
+    setWorkspaceMessage(`Created ${exported.filename}`);
+  }
+
   async function exportCardTypeTable(format: "json" | "csv" | "xlsx") {
     if (!workspaceSlug || !selectedCardTypeSlug) {
       return;
@@ -496,6 +524,19 @@ export function CodexPage() {
       format,
       tableSearch,
     );
+    downloadExportArtifact(exported);
+    setWorkspaceMessage(`Created ${exported.filename}`);
+  }
+
+  async function exportWorkspaceData(
+    format: "json" | "csv",
+    includeAssetIds: boolean,
+    selectedCardIds: number[] = [],
+  ) {
+    if (!workspaceSlug) {
+      return;
+    }
+    const exported = await api.exportWorkspaceData(workspaceSlug, format, includeAssetIds, selectedCardIds);
     downloadExportArtifact(exported);
     setWorkspaceMessage(`Created ${exported.filename}`);
   }
@@ -585,6 +626,22 @@ export function CodexPage() {
             await refreshWorkspace();
             setWorkspaceMessage("Unused asset deleted.");
           }}
+          onRepairWorkspaceHealth={async (action) => {
+            if (!workspaceSlug) {
+              return;
+            }
+            const result = await api.repairWorkspaceHealth(workspaceSlug, action);
+            await refreshWorkspace();
+            setWorkspaceMessage(result.message);
+          }}
+          onRepairAssetHealth={async (action) => {
+            if (!workspaceSlug) {
+              return;
+            }
+            const result = await api.repairWorkspaceAssetHealth(workspaceSlug, action);
+            await refreshWorkspace();
+            setWorkspaceMessage(result.message);
+          }}
           onRenameWorkspace={async (name, description) => {
             if (!workspaceSlug) {
               return;
@@ -622,6 +679,9 @@ export function CodexPage() {
               return;
             }
             await exportWorkspaceMutation.mutateAsync(workspaceSlug);
+          }}
+          onExportWorkspaceData={async (includeAssetIds) => {
+            await exportWorkspaceData("json", includeAssetIds);
           }}
           onArchiveWorkspace={async () => {
             if (!workspaceSlug || !activeWorkspace) {
@@ -715,14 +775,51 @@ export function CodexPage() {
                       selectedCardTypeSlug={selectedCardTypeSlug}
                       tableData={tableDataQuery.data ?? null}
                       query={tableSearch}
+                      sortBy={tableSortBy}
+                      sortDir={tableSortDir}
+                      statusFilter={tableStatusFilter}
                       onCardTypeChange={(slug) => setSelectedCardTypeSlug(slug || null)}
                       onQueryChange={setTableSearch}
+                      onSortChange={(sortBy, sortDir) => {
+                        setTableSortBy(sortBy);
+                        setTableSortDir(sortDir);
+                      }}
+                      onStatusFilterChange={setTableStatusFilter}
                       onSelectCard={(cardId) => {
                         setSelectedCardId(cardId);
                         navigate(`/cards/${cardId}`);
                       }}
                       onExportStructure={exportCardTypeStructure}
                       onExportTable={exportCardTypeTable}
+                      onExportSelected={(selectedCardIds, includeAssetIds) =>
+                        exportWorkspaceData("json", includeAssetIds, selectedCardIds)
+                      }
+                      onCreateRow={async (payload) => {
+                        if (!workspaceSlug || !selectedCardTypeSlug) {
+                          throw new Error("Choose a card type first.");
+                        }
+                        const result = await api.createCardTypeRow(workspaceSlug, selectedCardTypeSlug, payload);
+                        await refreshWorkspace();
+                        setWorkspaceMessage("Table row created.");
+                        return result;
+                      }}
+                      onUpdateRow={async (cardId, payload) => {
+                        if (!workspaceSlug || !selectedCardTypeSlug) {
+                          throw new Error("Choose a card type first.");
+                        }
+                        const result = await api.updateCardTypeRow(workspaceSlug, selectedCardTypeSlug, cardId, payload);
+                        await refreshWorkspace();
+                        setWorkspaceMessage("Table row saved.");
+                        return result;
+                      }}
+                      onDeleteRow={async (cardId) => {
+                        if (!workspaceSlug || !selectedCardTypeSlug) {
+                          throw new Error("Choose a card type first.");
+                        }
+                        await api.deleteCardTypeRow(workspaceSlug, selectedCardTypeSlug, cardId);
+                        await refreshWorkspace();
+                        setWorkspaceMessage("Table row archived.");
+                      }}
                       onPreviewImport={async (format, contentText, contentBase64, filename) => {
                         if (!workspaceSlug || !selectedCardTypeSlug) {
                           throw new Error("Choose a card type first.");
@@ -782,6 +879,9 @@ export function CodexPage() {
                     onGroupByCategoryChange={setGroupByCategory}
                     onCreateCard={() => void createCardMutation.mutateAsync()}
                     onOpenCardTypeStudio={() => setSchemaStudioOpen(true)}
+                    onExportSelectedCardTypeStructure={(schemaId) => {
+                      void exportCardTypeStructureForSlug(schemaId, "csv");
+                    }}
                     onDetailPanePositionChange={setDetailPanePosition}
                     onOpenTableView={() => setActiveScreen("table")}
                   />

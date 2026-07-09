@@ -35,6 +35,7 @@ interface AtlasPaneProps {
   onGroupByCategoryChange: (value: boolean) => void;
   onCreateCard: () => void;
   onOpenCardTypeStudio: () => void;
+  onExportSelectedCardTypeStructure: (schemaId: string) => void;
   onDetailPanePositionChange: (value: DetailPanePosition) => void;
   onOpenTableView: () => void;
 }
@@ -61,11 +62,14 @@ export function AtlasPane({
   onGroupByCategoryChange,
   onCreateCard,
   onOpenCardTypeStudio,
+  onExportSelectedCardTypeStructure,
   onDetailPanePositionChange,
   onOpenTableView,
 }: AtlasPaneProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const groups = groupCards(cards, filters, groupByCategory);
+  const selectedCard = cards.find((item) => item.id === selectedCardId) ?? null;
+  const selectedCardType = selectedCard?.schema_id ?? "";
 
   return (
     <section className="atlas-pane">
@@ -84,6 +88,15 @@ export function AtlasPane({
               <button className="secondary-button" onClick={onOpenCardTypeStudio}>
                 <BookPlus size={14} />
                 Card Type Studio
+              </button>
+              <button
+                className="secondary-button"
+                disabled={!selectedCardType}
+                title={selectedCardType ? "Export selected card type structure" : "Select a card with a card type first"}
+                onClick={() => selectedCardType && onExportSelectedCardTypeStructure(selectedCardType)}
+              >
+                <BookPlus size={14} />
+                Export Card Type structure
               </button>
               <button className="secondary-button" onClick={onOpenTableView}>
                 <LayoutGrid size={14} />

@@ -43,6 +43,14 @@ def workspace_files_dir(slug: str) -> Path:
     return workspace_dir(slug) / "files"
 
 
+def workspace_assets_dir(slug: str) -> Path:
+    return workspace_dir(slug) / "assets"
+
+
+def workspace_asset_bucket_dir(slug: str, bucket: str) -> Path:
+    return workspace_assets_dir(slug) / bucket
+
+
 def workspace_backups_dir(slug: str) -> Path:
     return workspace_dir(slug) / "backups"
 
@@ -59,6 +67,9 @@ def ensure_workspace_layout(slug: str) -> Path:
     root = workspace_dir(slug)
     root.mkdir(parents=True, exist_ok=True)
     workspace_files_dir(slug).mkdir(parents=True, exist_ok=True)
+    workspace_assets_dir(slug).mkdir(parents=True, exist_ok=True)
+    for bucket in ("images", "pdf", "documents", "spreadsheets", "audio", "video", "other"):
+        workspace_asset_bucket_dir(slug, bucket).mkdir(parents=True, exist_ok=True)
     workspace_backups_dir(slug).mkdir(parents=True, exist_ok=True)
     workspace_exports_dir(slug).mkdir(parents=True, exist_ok=True)
     app_safety_backups_dir().mkdir(parents=True, exist_ok=True)

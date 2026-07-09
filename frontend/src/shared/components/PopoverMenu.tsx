@@ -5,12 +5,13 @@ interface PopoverMenuProps {
   label: string;
   children: ReactNode;
   align?: "left" | "right";
+  triggerClassName?: string;
 }
 
-export function PopoverMenu({ icon, label, children, align = "right" }: PopoverMenuProps) {
+export function PopoverMenu({ icon, label, children, align = "right", triggerClassName = "" }: PopoverMenuProps) {
   return (
     <details className={`popover-menu ${align === "left" ? "align-left" : "align-right"}`}>
-      <summary className="icon-button" aria-label={label} title={label}>
+      <summary className={`icon-button ${triggerClassName}`.trim()} aria-label={label} title={label}>
         {icon}
       </summary>
       <div className="popover-menu-panel">

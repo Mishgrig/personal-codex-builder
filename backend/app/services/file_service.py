@@ -38,6 +38,59 @@ ASSET_PREFIX = {
 }
 
 
+def _serialize_asset_usages(asset: Asset) -> list[dict[str, str | int | None]]:
+    usages: list[dict[str, str | int | None]] = []
+    for link in asset.gallery_links:
+        if link.card:
+            if link.card.cover_asset_id == asset.id:
+                usages.append(
+                    {
+                        "usage_type": "card",
+                        "label": link.card.title,
+                        "card_id": link.card.id,
+                        "asset_role": "cover",
+                    }
+                )
+            usages.append(
+                {
+                    "usage_type": "card",
+                    "label": link.card.title,
+                    "card_id": link.card.id,
+                    "asset_role": "gallery",
+                }
+            )
+    for link in asset.attachment_links:
+        if link.card:
+            usages.append(
+                {
+                    "usage_type": "card",
+                    "label": link.card.title,
+                    "card_id": link.card.id,
+                    "asset_role": "attachment",
+                }
+            )
+    for link in asset.source_links:
+        if link.source:
+            usages.append(
+                {
+                    "usage_type": "source",
+                    "label": f"{link.source.card.title if getattr(link.source, 'card', None) else 'Card'} / {link.source.title}",
+                    "card_id": link.source.card_id,
+                    "asset_role": "source",
+                }
+            )
+    for link in asset.notebook_links:
+        usages.append(
+            {
+                "usage_type": "notebook",
+                "label": f"Notebook item {link.item_id}",
+                "card_id": None,
+                "asset_role": link.item_type,
+            }
+        )
+    return usages
+
+
 def _asset_bucket(upload: UploadFile, kind: str) -> str:
     mime = upload.content_type or ""
     if kind == "gallery" or mime.startswith("image/"):
@@ -66,6 +119,23 @@ def _asset_type_id(bucket: str) -> str:
         "other": "file",
     }
     return f"{prefix_map[bucket]}-{uuid4().hex[:6]}"
+
+
+def _asset_bucket_for_filename(filename: str, mime_type: str = "") -> str:
+    guessed_mime = mime_type or mimetypes.guess_type(filename)[0] or ""
+    if guessed_mime.startswith("image/"):
+        return "images"
+    if guessed_mime == "application/pdf":
+        return "pdf"
+    if "spreadsheet" in guessed_mime or "excel" in guessed_mime:
+        return "spreadsheets"
+    if guessed_mime.startswith("audio/"):
+        return "audio"
+    if guessed_mime.startswith("video/"):
+        return "video"
+    if any(token in guessed_mime for token in ["word", "document", "text"]):
+        return "documents"
+    return "other"
 
 
 def _read_upload_bytes(upload: UploadFile) -> bytes:
@@ -216,13 +286,16 @@ def delete_asset(session: Session, *, workspace_slug: str, asset_id: int | str, 
             session.add(card)
         session.flush()
         session.refresh(asset)
-        if asset.gallery_links or asset.attachment_links or asset.source_links:
+        if asset.gallery_links or asset.attachment_links or asset.source_links or asset.notebook_links:
             session.commit()
             refreshed_card = session.get(Card, affected_card_id)
             if refreshed_card:
                 index_card(session, refreshed_card)
                 session.commit()
             return affected_card_id
+
+    if asset.notebook_links:
+        raise ConflictError("This asset is still used in the workspace notebook and cannot be deleted.")
 
     file_path = get_settings().workspaces_dir / asset.relative_path
     if file_path.exists():
@@ -232,6 +305,8 @@ def delete_asset(session: Session, *, workspace_slug: str, asset_id: int | str, 
     for link in list(asset.attachment_links):
         session.delete(link)
     for link in list(asset.source_links):
+        session.delete(link)
+    for link in list(asset.notebook_links):
         session.delete(link)
     session.delete(asset)
     session.commit()
@@ -420,15 +495,17 @@ def delete_unused_asset(session: Session, *, asset_id: str) -> None:
             selectinload(Asset.gallery_links),
             selectinload(Asset.attachment_links),
             selectinload(Asset.source_links),
+            selectinload(Asset.notebook_links),
         )
         .where(Asset.id == asset_id)
     ).scalar_one_or_none()
     if not asset:
         raise NotFoundError("Asset was not found.")
-    if asset.gallery_links or asset.attachment_links or asset.source_links:
+    if asset.gallery_links or asset.attachment_links or asset.source_links or asset.notebook_links:
+        usages = _serialize_asset_usages(asset)
         raise ValidationAPIError(
             "This asset is still in use and cannot be deleted from the Asset Library.",
-            details={"asset_id": asset.id},
+            details={"asset_id": asset.id, "usages": usages},
         )
 
     file_path = get_settings().workspaces_dir / asset.relative_path
@@ -438,13 +515,55 @@ def delete_unused_asset(session: Session, *, asset_id: str) -> None:
     session.commit()
 
 
+def register_imported_asset(
+    session: Session,
+    *,
+    workspace_slug: str,
+    original_filename: str,
+    content: bytes,
+    mime_type: str = "",
+    preferred_asset_id: str | None = None,
+) -> Asset:
+    checksum = hashlib.sha256(content).hexdigest()
+    existing_asset = session.execute(select(Asset).where(Asset.checksum_sha256 == checksum)).scalar_one_or_none()
+    if existing_asset:
+        return existing_asset
+
+    bucket = _asset_bucket_for_filename(original_filename, mime_type)
+    suffix = Path(original_filename or "file").suffix
+    asset_id = preferred_asset_id or _asset_type_id(bucket)
+    if session.get(Asset, asset_id):
+        asset_id = _asset_type_id(bucket)
+    relative_path, size, guessed_mime = _save_binary(
+        workspace_slug=workspace_slug,
+        bucket=bucket,
+        asset_id=asset_id,
+        suffix=suffix,
+        content=content,
+    )
+    asset = Asset(
+        id=asset_id,
+        asset_type=bucket,
+        original_filename=original_filename or f"{asset_id}{suffix}",
+        stored_filename=f"{asset_id}{suffix}",
+        relative_path=relative_path,
+        mime_type=mime_type or guessed_mime,
+        size_bytes=size,
+        checksum_sha256=checksum,
+    )
+    session.add(asset)
+    session.flush()
+    return asset
+
+
 def list_assets(session: Session, *, q: str = "", asset_type: str | None = None) -> dict:
     statement = (
         select(Asset)
         .options(
             selectinload(Asset.gallery_links).selectinload(CardGalleryAsset.card),
             selectinload(Asset.attachment_links).selectinload(CardAttachmentAsset.card),
-            selectinload(Asset.source_links).selectinload(CardSourceAsset.source),
+            selectinload(Asset.source_links).selectinload(CardSourceAsset.source).selectinload(CardSource.card),
+            selectinload(Asset.notebook_links),
         )
         .order_by(Asset.created_at.desc(), Asset.id.desc())
     )
@@ -461,37 +580,7 @@ def list_assets(session: Session, *, q: str = "", asset_type: str | None = None)
     assets = session.execute(statement).scalars().all()
     items = []
     for asset in assets:
-        usages = []
-        for link in asset.gallery_links:
-            if link.card:
-                usages.append(
-                    {
-                        "usage_type": "card",
-                        "label": link.card.title,
-                        "card_id": link.card.id,
-                        "asset_role": "gallery",
-                    }
-                )
-        for link in asset.attachment_links:
-            if link.card:
-                usages.append(
-                    {
-                        "usage_type": "card",
-                        "label": link.card.title,
-                        "card_id": link.card.id,
-                        "asset_role": "attachment",
-                    }
-                )
-        for link in asset.source_links:
-            if link.source:
-                usages.append(
-                    {
-                        "usage_type": "source",
-                        "label": link.source.title,
-                        "card_id": link.source.card_id,
-                        "asset_role": "source",
-                    }
-                )
+        usages = _serialize_asset_usages(asset)
         items.append(
             {
                 "id": asset.id,

@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, Form, UploadFile
 
 from app.schemas.common import APIDataEnvelope, ActionStatus
 from app.schemas.workspace import (
+    WorkspaceDataExportRead,
     WorkspaceAssetLibraryRead,
     WorkspaceAssetAttachRequest,
     WorkspaceAssetHealthRead,
@@ -18,12 +19,15 @@ from app.schemas.workspace import (
     WorkspaceExportRead,
     WorkspaceHealthRead,
     WorkspaceNotebookRead,
+    WorkspaceRepairRead,
+    WorkspaceRepairRequest,
     WorkspaceReorderRequest,
     WorkspaceRestoreRead,
     WorkspaceRestoreRequest,
     WorkspaceSummary,
     WorkspaceUpdate,
 )
+from app.services.export_service import export_workspace_data
 from app.services.file_service import attach_existing_asset, delete_unused_asset, list_assets
 from app.services.workspace_manager import get_workspace_manager
 from app.utils.rich_text import extract_plain_text
@@ -160,16 +164,56 @@ def export_workspace(workspace_slug: str) -> dict[str, WorkspaceExportRead]:
     return {"data": exported}
 
 
+@router.get("/{workspace_slug}/data-export", response_model=APIDataEnvelope[WorkspaceDataExportRead])
+def get_workspace_data_export(
+    workspace_slug: str,
+    format: str = "json",
+    include_asset_ids: bool = False,
+    card_ids: str = "",
+) -> dict[str, WorkspaceDataExportRead]:
+    session = get_workspace_manager().get_workspace_session(workspace_slug)
+    try:
+        selected_ids = [int(item) for item in card_ids.split(",") if item.strip()] if card_ids.strip() else None
+        exported = export_workspace_data(
+            session,
+            workspace_slug,
+            export_format=format,
+            include_asset_ids=include_asset_ids,
+            card_ids=selected_ids,
+        )
+    finally:
+        session.close()
+    return {"data": WorkspaceDataExportRead(**exported)}
+
+
 @router.get("/{workspace_slug}/health", response_model=APIDataEnvelope[WorkspaceHealthRead])
 def get_workspace_health(workspace_slug: str) -> dict[str, WorkspaceHealthRead]:
     health = WorkspaceHealthRead(**get_workspace_manager().workspace_health(workspace_slug))
     return {"data": health}
 
 
+@router.post("/{workspace_slug}/health/repair", response_model=APIDataEnvelope[WorkspaceRepairRead])
+def post_workspace_health_repair(
+    workspace_slug: str,
+    payload: WorkspaceRepairRequest,
+) -> dict[str, WorkspaceRepairRead]:
+    repaired = get_workspace_manager().repair_workspace_health(workspace_slug, action=payload.action)
+    return {"data": WorkspaceRepairRead(**repaired)}
+
+
 @router.get("/{workspace_slug}/asset-health", response_model=APIDataEnvelope[WorkspaceAssetHealthRead])
 def get_workspace_asset_health(workspace_slug: str) -> dict[str, WorkspaceAssetHealthRead]:
     health = WorkspaceAssetHealthRead(**get_workspace_manager().asset_health(workspace_slug))
     return {"data": health}
+
+
+@router.post("/{workspace_slug}/asset-health/repair", response_model=APIDataEnvelope[WorkspaceRepairRead])
+def post_workspace_asset_health_repair(
+    workspace_slug: str,
+    payload: WorkspaceRepairRequest,
+) -> dict[str, WorkspaceRepairRead]:
+    repaired = get_workspace_manager().repair_asset_health(workspace_slug, action=payload.action)
+    return {"data": WorkspaceRepairRead(**repaired)}
 
 
 @router.get("/{workspace_slug}/assets", response_model=APIDataEnvelope[WorkspaceAssetLibraryRead])
@@ -235,6 +279,7 @@ def patch_workspace_notebook(
             workspace_slug,
             body_json=payload.body_json,
             body_text=payload.body_text or extract_plain_text(payload.body_json),
+            items=payload.items,
         )
     )
     return {"data": notebook}

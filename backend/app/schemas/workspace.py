@@ -70,6 +70,16 @@ class WorkspaceExportRead(BaseModel):
     path: str
 
 
+class WorkspaceDataExportRead(BaseModel):
+    filename: str
+    format: str
+    scope: str
+    include_asset_ids: bool = False
+    row_count: int = 0
+    content_text: str = ""
+    content_json: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class WorkspaceRestoreRead(BaseModel):
     workspace: WorkspaceSummary
     safety_backup: WorkspaceBackupRead
@@ -129,6 +139,7 @@ class WorkspaceAssetHealthRead(BaseModel):
 
 
 class WorkspaceNotebookRead(BaseModel):
+    items: list[dict[str, Any]] = Field(default_factory=list)
     body_json: dict[str, Any] = Field(default_factory=dict)
     body_text: str = ""
 
@@ -167,6 +178,17 @@ class WorkspaceAssetAttachRequest(BaseModel):
     card_id: int
     role: str = "gallery"
     set_as_cover: bool = False
+
+
+class WorkspaceRepairRequest(BaseModel):
+    action: str
+
+
+class WorkspaceRepairRead(BaseModel):
+    status: str = "ok"
+    message: str
+    repaired_count: int = 0
+    skipped_count: int = 0
 
 
 class AppInfoRead(BaseModel):

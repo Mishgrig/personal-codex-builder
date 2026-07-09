@@ -95,6 +95,13 @@ def test_bootstrap_migrates_legacy_workspace_db(tmp_path: Path, monkeypatch) -> 
         assert not legacy_db_path.exists()
         assert (workspace_root / "workspace_manifest.json").exists()
         assert (workspace_root / "workspace.json").exists()
+        assert (workspace_root / "assets" / "images").exists()
+        assert (workspace_root / "assets" / "pdf").exists()
+        assert (workspace_root / "assets" / "documents").exists()
+        assert (workspace_root / "assets" / "spreadsheets").exists()
+        assert (workspace_root / "assets" / "audio").exists()
+        assert (workspace_root / "assets" / "video").exists()
+        assert (workspace_root / "assets" / "other").exists()
         assert (workspace_root / "files").exists()
         assert (workspace_root / "backups").exists()
         assert (workspace_root / "exports").exists()
@@ -125,6 +132,7 @@ def test_delete_workspace_creates_safety_archive(tmp_path: Path, monkeypatch) ->
         workspace_root = get_settings().workspaces_dir / slug
 
         (workspace_root / "files" / "note.txt").write_text("local attachment", encoding="utf-8")
+        (workspace_root / "assets" / "images" / "img-demo.png").write_bytes(b"png")
 
         manager.delete_workspace(slug)
 
@@ -141,6 +149,50 @@ def test_delete_workspace_creates_safety_archive(tmp_path: Path, monkeypatch) ->
         assert "workspace_manifest.json" in members
         assert "workspace.json" in members
         assert "files/note.txt" in members
+        assert "assets/images/img-demo.png" in members
+    finally:
+        _reset_runtime_state()
+
+
+def test_demo_workspace_repair_creates_safety_archive(tmp_path: Path, monkeypatch) -> None:
+    data_dir = tmp_path / "demo-repair-data"
+    monkeypatch.setenv("CODEX_DATA_DIR", str(data_dir))
+    _reset_runtime_state()
+
+    try:
+        from app.core.config import get_settings
+        from app.schemas.workspace import WorkspaceCreate
+        from app.services.workspace_manager import WorkspaceManager
+
+        manager = WorkspaceManager()
+        created = manager.create_workspace(
+            WorkspaceCreate(name="Spelljammer Atlas", description="Demo fantasy codex", theme="fantasy"),
+            seed_demo=False,
+        )
+        slug = created["slug"]
+        assert slug == "spelljammer-atlas"
+
+        workspace_root = get_settings().workspaces_dir / slug
+        db_path = workspace_root / "workspace.sqlite"
+        damaged = sqlite3.connect(db_path)
+        try:
+            damaged.execute("DELETE FROM schema_fields")
+            damaged.execute("DELETE FROM card_schemas")
+            damaged.execute("DELETE FROM cards_registry")
+            damaged.execute("DELETE FROM cards")
+            damaged.commit()
+        finally:
+            damaged.close()
+
+        manager.ensure_default_workspace()
+
+        safety_dir = data_dir / "safety-backups"
+        archives = sorted(safety_dir.glob("*demo-repair.workspace.zip"))
+        assert archives
+        with zipfile.ZipFile(archives[0]) as archive:
+            members = set(archive.namelist())
+        assert "workspace.sqlite" in members
+        assert "workspace_manifest.json" in members
     finally:
         _reset_runtime_state()
 

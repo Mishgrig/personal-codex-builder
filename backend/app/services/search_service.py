@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 
 from sqlalchemy import Select, select, text
+from sqlalchemy.exc import DatabaseError, OperationalError
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.workspace import (
@@ -14,6 +15,7 @@ from app.models.workspace import (
     CardSource,
     CardSourceAsset,
     CardTaxonomyTerm,
+    CardRegistry,
 )
 from app.schemas.card import SearchResult
 
@@ -137,6 +139,23 @@ def remove_from_index(session: Session, card_id: int) -> None:
     session.execute(text("DELETE FROM card_search_index WHERE card_id = :card_id"), {"card_id": str(card_id)})
 
 
+def _fts_matching_ids(session: Session, query: str) -> list[int]:
+    return [
+        int(row[0])
+        for row in session.execute(
+            text(
+                """
+                SELECT card_id
+                FROM card_search_index
+                WHERE card_search_index MATCH :query
+                ORDER BY bm25(card_search_index)
+                """
+            ),
+            {"query": query},
+        ).all()
+    ]
+
+
 def search_cards(
     session: Session,
     *,
@@ -147,6 +166,7 @@ def search_cards(
     layer: int | None = None,
     sort_mode: str = "manual",
 ):
+    fallback_to_scan = False
     stmt: Select[tuple[Card]] = select(Card).options(
         selectinload(Card.schema),
         selectinload(Card.taxonomy_links).selectinload(CardTaxonomyTerm.term),
@@ -155,28 +175,19 @@ def search_cards(
         selectinload(Card.gallery_asset_links).selectinload(CardGalleryAsset.asset),
         selectinload(Card.assets),
     )
+    stmt = stmt.where(~Card.registry_entry.has(CardRegistry.deleted_at.is_not(None)))
 
     if q.strip():
         normalized_query = " OR ".join(_normalize_terms(q.strip()))
         if not normalized_query:
             return SearchResult(items=[], total=0, q=q, grouping="domain", generated_at=datetime.now(timezone.utc))
-        matching_ids = [
-            int(row[0])
-            for row in session.execute(
-                text(
-                    """
-                    SELECT card_id
-                    FROM card_search_index
-                    WHERE card_search_index MATCH :query
-                    ORDER BY bm25(card_search_index)
-                    """
-                ),
-                {"query": normalized_query},
-            ).all()
-        ]
-        if not matching_ids:
-            return SearchResult(items=[], total=0, q=q, grouping="domain", generated_at=datetime.now(timezone.utc))
-        stmt = stmt.where(Card.id.in_(matching_ids))
+        try:
+            matching_ids = _fts_matching_ids(session, normalized_query)
+            if not matching_ids:
+                return SearchResult(items=[], total=0, q=q, grouping="domain", generated_at=datetime.now(timezone.utc))
+            stmt = stmt.where(Card.id.in_(matching_ids))
+        except (OperationalError, DatabaseError):
+            fallback_to_scan = True
 
     for selected_term in [domain, type_term, subtype, layer]:
         if selected_term:
@@ -188,6 +199,31 @@ def search_cards(
         stmt = stmt.order_by(Card.sort_order.asc(), Card.title.asc())
 
     cards = list(session.execute(stmt).scalars().unique())
+    if fallback_to_scan and q.strip():
+        filtered_cards = []
+        lowered_q = q.strip().lower()
+        for card in cards:
+            combined_text = " ".join(
+                [
+                    card.title,
+                    card.summary,
+                    card.body_text,
+                    " ".join(str(value) for value in (card.dynamic_fields or {}).values()),
+                    " ".join(link.term.label for link in card.taxonomy_links if link.term),
+                    " ".join(f"{source.title} {source.url} {source.note}" for source in card.sources),
+                    " ".join(
+                        link.asset.original_filename
+                        for source in card.sources
+                        for link in source.asset_links
+                        if link.asset
+                    ),
+                    " ".join(link.asset.original_filename for link in card.attachment_asset_links if link.asset),
+                ]
+            )
+            if lowered_q in combined_text.lower():
+                filtered_cards.append(card)
+        cards = filtered_cards
+
     items = []
     for card in cards:
         combined_text = " ".join(

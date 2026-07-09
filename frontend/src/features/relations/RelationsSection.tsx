@@ -22,7 +22,12 @@ export function RelationsSection({
   const [targetCardId, setTargetCardId] = useState<number | null>(null);
   const [relationType, setRelationType] = useState("one-to-one");
   const [note, setNote] = useState("");
-  const available = candidates.filter((item) => item.id !== card.id);
+  const [search, setSearch] = useState("");
+  const available = candidates.filter(
+    (item) =>
+      item.id !== card.id &&
+      (!search.trim() || `${item.title} ${item.summary ?? ""}`.toLowerCase().includes(search.trim().toLowerCase())),
+  );
 
   return (
     <section className="detail-section">
@@ -51,6 +56,12 @@ export function RelationsSection({
         ))}
       </div>
       <div className="row-actions">
+        <input
+          className="themed-input"
+          placeholder="Find a card"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
         <select
           className="themed-select"
           value={targetCardId ?? ""}

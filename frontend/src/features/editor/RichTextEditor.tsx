@@ -7,7 +7,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Bold, Italic, List, ListOrdered, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import { Bold, Copy, Italic, List, ListOrdered, Paintbrush, Pipette, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
 import { FontSize } from "./fontSizeExtension";
 
 interface RichTextEditorProps {
@@ -16,14 +16,31 @@ interface RichTextEditorProps {
 }
 
 const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
+const TEXT_COLORS = ["#f0efe6", "#d8a026", "#7dd3fc", "#fca5a5", "#86efac", "#c4b5fd"];
+const HIGHLIGHT_COLORS = ["#d8a026", "#1d4ed8", "#7c3aed", "#15803d", "#b45309", "#be123c"];
+
+interface FormatSnapshot {
+  block: "body" | "h1" | "h2" | "h3" | "bullet" | "ordered";
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  strike: boolean;
+  color: string;
+  highlight: string;
+  fontSize: string;
+}
 
 export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
+  const [copiedFormat, setCopiedFormat] = useState<FormatSnapshot | null>(null);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
         heading: {
           levels: [1, 2, 3],
+        },
+        history: {
+          depth: 50,
         },
       }),
       Underline,
@@ -70,34 +87,10 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       <div className="editor-toolbar">
         <select
           className="toolbar-select"
-          value={
-            editor.isActive("heading", { level: 1 })
-              ? "h1"
-              : editor.isActive("heading", { level: 2 })
-                ? "h2"
-                : editor.isActive("heading", { level: 3 })
-                  ? "h3"
-                  : editor.isActive("bulletList")
-                    ? "bullet"
-                    : editor.isActive("orderedList")
-                      ? "ordered"
-                      : "body"
-          }
+          value={currentBlock(editor)}
           onChange={(event) => {
             const next = event.target.value;
-            if (next === "body") {
-              editor.chain().focus().setParagraph().run();
-              return;
-            }
-            if (next === "bullet") {
-              editor.chain().focus().toggleBulletList().run();
-              return;
-            }
-            if (next === "ordered") {
-              editor.chain().focus().toggleOrderedList().run();
-              return;
-            }
-            editor.chain().focus().toggleHeading({ level: Number(next.replace("h", "")) as 1 | 2 | 3 }).run();
+            applyBlock(editor, next as FormatSnapshot["block"]);
           }}
         >
           <option value="h1">Title (H1)</option>
@@ -157,9 +150,39 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         <button className={editor.isActive("orderedList") ? "toolbar-button active" : "toolbar-button"} title="Numbered list" onClick={() => editor.chain().focus().toggleOrderedList().run()}>
           <ListOrdered size={15} />
         </button>
+        <div className="color-palette-group">
+          {TEXT_COLORS.map((color) => (
+            <button
+              key={color}
+              className="color-swatch-button"
+              title={`Text color ${color}`}
+              style={{ ["--swatch-color" as string]: color }}
+              onClick={() => editor.chain().focus().setColor(color).run()}
+            />
+          ))}
+        </div>
         <label className="color-input-shell" title="Text color">
           <input type="color" defaultValue="#f0efe6" onChange={(event) => editor.chain().focus().setColor(event.target.value).run()} />
         </label>
+        <button
+          className="toolbar-button"
+          title="Pick text color from screen"
+          disabled={typeof window === "undefined" || !("EyeDropper" in window)}
+          onClick={() => void pickTextColor(editor)}
+        >
+          <Pipette size={15} />
+        </button>
+        <div className="color-palette-group">
+          {HIGHLIGHT_COLORS.map((color) => (
+            <button
+              key={color}
+              className="color-swatch-button highlight"
+              title={`Highlight color ${color}`}
+              style={{ ["--swatch-color" as string]: color }}
+              onClick={() => editor.chain().focus().setHighlight({ color }).run()}
+            />
+          ))}
+        </div>
         <label className="color-input-shell highlight" title="Highlight color">
           <input type="color" defaultValue="#d8a026" onChange={(event) => editor.chain().focus().setHighlight({ color: event.target.value }).run()} />
         </label>
@@ -176,6 +199,21 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         <button className="toolbar-button" title="Redo" onClick={() => editor.chain().focus().redo().run()}>
           <Redo2 size={15} />
         </button>
+        <button
+          className="toolbar-button"
+          title="Copy formatting"
+          onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
+        >
+          <Copy size={15} />
+        </button>
+        <button
+          className="toolbar-button"
+          title="Paste formatting"
+          disabled={!copiedFormat}
+          onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
+        >
+          <Paintbrush size={15} />
+        </button>
       </div>
       <EditorContent editor={editor} />
     </div>
@@ -186,4 +224,69 @@ function applyFont(editor: NonNullable<ReturnType<typeof useEditor>>, fontSize: 
   const next = String(Math.max(8, Number(fontSize || "14") + delta));
   setFontSize(next);
   editor.chain().focus().setFontSize(`${next}px`).run();
+}
+
+function currentBlock(editor: NonNullable<ReturnType<typeof useEditor>>): FormatSnapshot["block"] {
+  if (editor.isActive("heading", { level: 1 })) return "h1";
+  if (editor.isActive("heading", { level: 2 })) return "h2";
+  if (editor.isActive("heading", { level: 3 })) return "h3";
+  if (editor.isActive("bulletList")) return "bullet";
+  if (editor.isActive("orderedList")) return "ordered";
+  return "body";
+}
+
+function applyBlock(editor: NonNullable<ReturnType<typeof useEditor>>, block: FormatSnapshot["block"]) {
+  if (block === "body") {
+    editor.chain().focus().setParagraph().run();
+    return;
+  }
+  if (block === "bullet") {
+    editor.chain().focus().toggleBulletList().run();
+    return;
+  }
+  if (block === "ordered") {
+    editor.chain().focus().toggleOrderedList().run();
+    return;
+  }
+  editor.chain().focus().toggleHeading({ level: Number(block.replace("h", "")) as 1 | 2 | 3 }).run();
+}
+
+function readCurrentFormat(editor: NonNullable<ReturnType<typeof useEditor>>, fallbackFontSize: string): FormatSnapshot {
+  const textStyle = editor.getAttributes("textStyle") as { color?: string; fontSize?: string };
+  const highlight = editor.getAttributes("highlight") as { color?: string };
+  return {
+    block: currentBlock(editor),
+    bold: editor.isActive("bold"),
+    italic: editor.isActive("italic"),
+    underline: editor.isActive("underline"),
+    strike: editor.isActive("strike"),
+    color: textStyle.color ?? "",
+    highlight: highlight.color ?? "",
+    fontSize: (textStyle.fontSize ?? `${fallbackFontSize}px`).replace("px", ""),
+  };
+}
+
+function applyCopiedFormat(
+  editor: NonNullable<ReturnType<typeof useEditor>>,
+  snapshot: FormatSnapshot,
+  setFontSize: (value: string) => void,
+) {
+  editor.chain().focus().unsetAllMarks().unsetHighlight().unsetColor().setFontSize(`${snapshot.fontSize}px`).run();
+  applyBlock(editor, snapshot.block);
+  if (snapshot.bold) editor.chain().focus().toggleBold().run();
+  if (snapshot.italic) editor.chain().focus().toggleItalic().run();
+  if (snapshot.underline) editor.chain().focus().toggleUnderline().run();
+  if (snapshot.strike) editor.chain().focus().toggleStrike().run();
+  if (snapshot.color) editor.chain().focus().setColor(snapshot.color).run();
+  if (snapshot.highlight) editor.chain().focus().setHighlight({ color: snapshot.highlight }).run();
+  setFontSize(snapshot.fontSize);
+}
+
+async function pickTextColor(editor: NonNullable<ReturnType<typeof useEditor>>) {
+  if (typeof window === "undefined" || !("EyeDropper" in window)) {
+    return;
+  }
+  const eyeDropper = new (window as Window & { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper();
+  const result = await eyeDropper.open();
+  editor.chain().focus().setColor(result.sRGBHex).run();
 }
