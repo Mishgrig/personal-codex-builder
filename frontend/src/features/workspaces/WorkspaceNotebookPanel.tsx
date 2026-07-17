@@ -375,8 +375,24 @@ function NotebookItemEditor({
   return (
     <div className="notebook-item-editor">
       <div className="notebook-editor-header">
-        <div>
+        <div className="notebook-title-row">
           <strong>{notebookItemTitle(item)}</strong>
+          <details className="notebook-icon-picker">
+            <summary className="secondary-button small" title="Choose note icon">
+              {noteIcon(item.icon)}
+            </summary>
+            <div className="notebook-icon-menu">
+              {NOTE_ICONS.map((option) => (
+                <NotebookIconButton
+                  key={option.id}
+                  active={item.icon === option.id}
+                  label={option.label}
+                  icon={option.icon}
+                  onClick={() => onChange({ icon: option.id })}
+                />
+              ))}
+            </div>
+          </details>
         </div>
         <div className="notebook-editor-tools">
           <label className="secondary-button small notebook-upload-button">
@@ -401,22 +417,6 @@ function NotebookItemEditor({
           >
             <Save size={14} />
           </button>
-          <details className="notebook-icon-picker">
-            <summary className="secondary-button small" title="Choose note icon">
-              {noteIcon(item.icon)}
-            </summary>
-            <div className="notebook-icon-menu">
-              {NOTE_ICONS.map((option) => (
-                <NotebookIconButton
-                  key={option.id}
-                  active={item.icon === option.id}
-                  label={option.label}
-                  icon={option.icon}
-                  onClick={() => onChange({ icon: option.id })}
-                />
-              ))}
-            </div>
-          </details>
         </div>
       </div>
 

@@ -748,7 +748,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 8px;
+  padding: 8px 8px 6px;
   border-bottom: 1px solid rgba(201, 161, 76, 0.14);
   background: rgba(255, 251, 243, 0.88);
 }
@@ -771,16 +771,14 @@
 }
 
 .editor-toolbar-popover {
-  position: absolute;
-  left: 8px;
-  top: calc(100% + 8px);
-  z-index: var(--layer-popover-active);
-  width: min(430px, calc(100vw - 48px));
+  position: relative;
+  z-index: var(--layer-popover);
+  width: 100%;
   padding: 10px;
-  border: 1px solid rgba(126, 82, 54, 0.14);
-  border-radius: 14px;
+  border-bottom: 1px solid rgba(126, 82, 54, 0.14);
+  border-radius: 0;
   background: rgba(255, 251, 243, 0.99);
-  box-shadow: 0 18px 42px rgba(82, 53, 35, 0.22);
+  box-shadow: none;
 }
 
 .toolbar-select,

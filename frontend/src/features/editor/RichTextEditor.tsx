@@ -235,18 +235,20 @@ export function RichTextEditor({
   return (
     <div className={`editor-shell editor-shell-${density}${className ? ` ${className}` : ""}`}>
       {toolbarMode === "popover" ? (
-        <div className="editor-popover-toolbar-shell">
-          <button
-            type="button"
-            className={`editor-aa-trigger${toolbarOpen ? " active" : ""}`}
-            aria-label="Text formatting"
-            aria-expanded={toolbarOpen}
-            onClick={() => setToolbarOpen((current) => !current)}
-          >
-            Aa
-          </button>
+        <>
+          <div className="editor-popover-toolbar-shell">
+            <button
+              type="button"
+              className={`editor-aa-trigger${toolbarOpen ? " active" : ""}`}
+              aria-label="Text formatting"
+              aria-expanded={toolbarOpen}
+              onClick={() => setToolbarOpen((current) => !current)}
+            >
+              Aa
+            </button>
+          </div>
           {toolbarOpen ? <div className="editor-toolbar editor-toolbar-popover">{toolbarContent}</div> : null}
-        </div>
+        </>
       ) : (
         <div className="editor-toolbar">{toolbarContent}</div>
       )}

@@ -771,15 +771,13 @@ select {
 }
 
 .notebook-rich-editor-shell .rich-body {
-  min-height: 220px;
+  min-height: 132px;
   height: auto;
   max-height: min(54vh, 700px);
   overflow-y: auto;
 }
 
 .notebook-rich-editor-shell .editor-toolbar-popover {
-  left: 8px;
-  right: 8px;
   width: auto;
   max-width: none;
 }

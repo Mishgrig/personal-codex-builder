@@ -136,11 +136,11 @@
 .notebook-item-editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  flex: 1;
+  gap: 10px;
+  flex: 0 1 auto;
   min-height: 0;
-  overflow: hidden;
-  padding: 14px;
+  overflow: visible;
+  padding: 12px;
   border-radius: 16px;
   background: rgba(8, 14, 28, 0.48);
   border: 1px solid rgba(201, 161, 76, 0.14);
@@ -148,16 +148,18 @@
 
 .notebook-editor-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
   min-width: 0;
 }
 
-.notebook-editor-header > div:first-child {
+.notebook-title-row {
   min-width: 0;
   width: 100%;
-  display: grid;
-  gap: 2px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .notebook-editor-header strong {
@@ -171,18 +173,18 @@
 }
 
 .notebook-editor-tools {
-  display: grid;
-  grid-template-columns: repeat(3, 46px);
-  justify-content: center;
+  display: flex;
+  justify-content: flex-end;
   justify-items: center;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
 }
 
 .notebook-icon-picker {
-  width: 46px;
-  height: 46px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
 }
 
 .notebook-editor-tools .secondary-button,
@@ -191,19 +193,19 @@
 .notebook-icon-picker summary {
   width: 100%;
   min-width: 0;
-  height: 46px;
-  min-height: 46px;
-  max-height: 46px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
   padding: 0;
   justify-content: center;
   white-space: nowrap;
-  border-radius: 14px;
+  border-radius: 10px;
 }
 
 .notebook-save-icon {
   width: 100%;
   min-width: 0;
-  height: 46px;
+  height: 34px;
 }
 
 .notebook-attachment-list {
@@ -297,18 +299,23 @@
   border-radius: 16px;
   background: rgba(255, 251, 243, 0.82);
   flex: 0 0 auto;
-  min-height: 240px;
+  min-height: 0;
   max-height: none;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .notebook-rich-editor-shell .rich-body {
-  min-height: 0;
+  min-height: 132px;
   height: auto;
   max-height: min(54vh, 700px);
   overflow-y: auto;
   background: rgba(255, 251, 243, 0.9);
   color: var(--text);
+  line-height: 1.32;
+}
+
+.notebook-rich-editor-shell .rich-body p {
+  margin: 0 0 0.35em;
 }
 
 .notebook-icon-picker {
