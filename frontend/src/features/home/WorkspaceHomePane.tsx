@@ -30,6 +30,7 @@ import {
   Table2,
   Trash2,
   Users,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import type React from "react";
@@ -43,6 +44,7 @@ import type {
   WorkspaceSummary,
 } from "../../types/models";
 import { ColorPalettePicker } from "../../shared/components/ColorPalettePicker";
+import { IconButton } from "../../shared/components/IconButton";
 import {
   assetReminderItems,
   formatBytes,
@@ -766,89 +768,91 @@ export function WorkspaceHomePane({
     );
   }
 
+  const widgetSettingsPanel = (
+    <>
+      <div className="workspace-manager-header">
+        <div>
+          <h2 className="dashboard-widget-title">
+            <span>Dashboard widgets</span>
+            <span className="dashboard-widget-title-icon"><SlidersHorizontal size={18} /></span>
+          </h2>
+          <p>Enable, resize and reorder the Home widgets. These preferences stay in this local world.</p>
+        </div>
+        <IconButton title="Close widget settings" aria-label="Close widget settings" onClick={() => setWidgetSettingsOpen(false)}>
+          <X size={16} />
+        </IconButton>
+      </div>
+      <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={reorderWidgets}>
+        <SortableContext items={[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
+          <div className="dashboard-widget-settings-list">
+            {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
+              <SortableWidgetSettingRow key={widget.id} widget={widget}>
+                <div className={isSystemWidget(widget) ? "widget-setting-title" : "widget-setting-title custom"}>
+                  <label className="tiny-toggle widget-enabled-toggle" aria-label={`Show ${widgetLabel(widget)}`}>
+                    <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
+                  </label>
+                  <EditableWidgetTitle
+                    value={widget.title ?? ""}
+                    placeholder={isSystemWidget(widget) ? widgetLabel(widget.kind) : "Enter widget name"}
+                    ariaLabel={`Widget title: ${widgetLabel(widget)}`}
+                    onCommit={(title) => patchWidget(widget.id, { title })}
+                  />
+                  {isSystemWidget(widget) ? (
+                    <WidgetInfo label={widgetLabel(widget.kind)} description={SYSTEM_WIDGET_DESCRIPTIONS[widget.kind]} />
+                  ) : (
+                    <span className="widget-custom-badge" title="Custom widget">Custom</span>
+                  )}
+                </div>
+                <WidgetSizePicker value={widget.size} onChange={(size) => patchWidget(widget.id, { size })} />
+                <ColorPalettePicker
+                  value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
+                  label={`Widget color: ${widgetLabel(widget)}`}
+                  paletteVariant="widget"
+                  recentColors={recentCustomColors}
+                  align="right"
+                  triggerClassName="widget-tint-trigger"
+                  onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
+                  onRememberColor={rememberCustomColor}
+                  onClear={() => patchWidgetTint(widget.id, "system")}
+                  displayColor={widgetDisplayColor(widgetTint(widget.id))}
+                  mapDisplayColor={widgetDisplayColor}
+                />
+                <WidgetIconPicker value={widgetIconId(widget)} onChange={(iconId) => patchWidgetIcon(widget.id, iconId)} />
+                {isDuplicableWidget(widget) ? (
+                  <button className="mini-icon-button" title={`Duplicate ${widgetLabel(widget)}`} aria-label={`Duplicate ${widgetLabel(widget)}`} onClick={() => duplicateWidget(widget)}>
+                    <CopyPlus size={13} />
+                  </button>
+                ) : (
+                  <span className="settings-row-spacer" aria-hidden="true" />
+                )}
+                {!isSystemWidget(widget) ? (
+                  <button className="mini-icon-button danger" title={`Delete ${widgetLabel(widget)}`} aria-label={`Delete ${widgetLabel(widget)}`} onClick={() => deleteWidget(widget)}>
+                    <Trash2 size={13} />
+                  </button>
+                ) : (
+                  <span className="settings-row-spacer" aria-hidden="true" />
+                )}
+              </SortableWidgetSettingRow>
+            ))}
+          </div>
+        </SortableContext>
+      </DndContext>
+    </>
+  );
+
   return (
     <section className="workspace-home-pane">
       <div className="home-hero">
         <div className="home-hero-utility">
-          <div className="dashboard-settings-popover">
-            <button
-              className="secondary-button"
-              aria-expanded={widgetSettingsOpen}
-              aria-controls="dashboard-widget-settings"
-              onClick={() => setWidgetSettingsOpen((current) => !current)}
-            >
-              <SlidersHorizontal size={14} />
-              {widgetSettingsOpen ? "Hide widget settings" : "Customize widgets"}
-            </button>
-            {widgetSettingsOpen ? (
-              <section id="dashboard-widget-settings" className="home-panel dashboard-settings-panel dashboard-settings-popover-panel">
-                <div className="section-header">
-                  <div>
-                    <h2 className="dashboard-widget-title">
-                      <span>Dashboard widgets</span>
-                      <span className="dashboard-widget-title-icon"><SlidersHorizontal size={18} /></span>
-                    </h2>
-                    <p className="helper-text">Enable, resize and reorder the Home widgets. These preferences stay in this local world.</p>
-                  </div>
-                </div>
-                <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={reorderWidgets}>
-                  <SortableContext items={[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
-                    <div className="dashboard-widget-settings-list">
-                      {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
-                        <SortableWidgetSettingRow key={widget.id} widget={widget}>
-                          <div className={isSystemWidget(widget) ? "widget-setting-title" : "widget-setting-title custom"}>
-                            <label className="tiny-toggle widget-enabled-toggle" aria-label={`Show ${widgetLabel(widget)}`}>
-                              <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
-                            </label>
-                            <EditableWidgetTitle
-                              value={widget.title ?? ""}
-                              placeholder={isSystemWidget(widget) ? widgetLabel(widget.kind) : "Enter widget name"}
-                              ariaLabel={`Widget title: ${widgetLabel(widget)}`}
-                              onCommit={(title) => patchWidget(widget.id, { title })}
-                            />
-                            {isSystemWidget(widget) ? (
-                              <WidgetInfo label={widgetLabel(widget.kind)} description={SYSTEM_WIDGET_DESCRIPTIONS[widget.kind]} />
-                            ) : (
-                              <span className="widget-custom-badge" title="Custom widget">Custom</span>
-                            )}
-                          </div>
-                          <WidgetSizePicker value={widget.size} onChange={(size) => patchWidget(widget.id, { size })} />
-                          <ColorPalettePicker
-                            value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
-                            label={`Widget color: ${widgetLabel(widget)}`}
-                            paletteVariant="widget"
-                            recentColors={recentCustomColors}
-                            align="right"
-                            triggerClassName="widget-tint-trigger"
-                            onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
-                            onRememberColor={rememberCustomColor}
-                            onClear={() => patchWidgetTint(widget.id, "system")}
-                            displayColor={widgetDisplayColor(widgetTint(widget.id))}
-                            mapDisplayColor={widgetDisplayColor}
-                          />
-                          <WidgetIconPicker value={widgetIconId(widget)} onChange={(iconId) => patchWidgetIcon(widget.id, iconId)} />
-                          {isDuplicableWidget(widget) ? (
-                            <button className="mini-icon-button" title={`Duplicate ${widgetLabel(widget)}`} aria-label={`Duplicate ${widgetLabel(widget)}`} onClick={() => duplicateWidget(widget)}>
-                              <CopyPlus size={13} />
-                            </button>
-                          ) : (
-                            <span className="settings-row-spacer" aria-hidden="true" />
-                          )}
-                          {!isSystemWidget(widget) ? (
-                            <button className="mini-icon-button danger" title={`Delete ${widgetLabel(widget)}`} aria-label={`Delete ${widgetLabel(widget)}`} onClick={() => deleteWidget(widget)}>
-                              <Trash2 size={13} />
-                            </button>
-                          ) : (
-                            <span className="settings-row-spacer" aria-hidden="true" />
-                          )}
-                        </SortableWidgetSettingRow>
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-              </section>
-            ) : null}
-          </div>
+          <button
+            className="secondary-button"
+            aria-expanded={widgetSettingsOpen}
+            aria-controls="dashboard-widget-settings"
+            onClick={() => setWidgetSettingsOpen(true)}
+          >
+            <SlidersHorizontal size={14} />
+            Customize widgets
+          </button>
           <button className="secondary-button" title="Open world management" onClick={onOpenManager}>
             <Settings2 size={14} />
             Manage world
@@ -902,6 +906,17 @@ export function WorkspaceHomePane({
           </section>
         )}
       </div>
+      {widgetSettingsOpen ? (
+        <div className="modal-backdrop" onClick={() => setWidgetSettingsOpen(false)}>
+          <section
+            id="dashboard-widget-settings"
+            className="modal-card workspace-manager-modal dashboard-settings-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {widgetSettingsPanel}
+          </section>
+        </div>
+      ) : null}
     </section>
   );
 }

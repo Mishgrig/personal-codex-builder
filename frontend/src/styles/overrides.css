@@ -1423,10 +1423,6 @@ select {
   max-width: min(380px, 48%);
 }
 
-.dashboard-settings-popover-panel {
-  width: min(1120px, calc(100vw - 48px));
-}
-
 .home-hero-actions {
   max-width: 100%;
 }
@@ -1494,11 +1490,6 @@ select {
     justify-content: flex-start;
   }
 
-  .dashboard-settings-popover-panel {
-    left: 0;
-    right: auto;
-    width: calc(100vw - 48px);
-  }
 }
 
 /* Keep the rail icons optically centered even when the hidden text labels exist. */

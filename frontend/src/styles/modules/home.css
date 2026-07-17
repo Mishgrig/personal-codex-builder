@@ -50,21 +50,6 @@
   max-width: min(620px, 46%);
 }
 
-.dashboard-settings-popover {
-  position: relative;
-}
-
-.dashboard-settings-popover-panel {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  width: min(1060px, calc(100vw - 48px));
-  max-height: min(720px, calc(100vh - 140px));
-  overflow: auto;
-  z-index: 10000;
-  box-shadow: 0 20px 60px rgba(82, 53, 35, 0.2);
-}
-
 .home-hero h1 {
   margin: 6px 0 8px;
 }
@@ -409,6 +394,10 @@
 
 .dashboard-settings-panel {
   border-style: dashed;
+}
+
+.modal-card.dashboard-settings-modal {
+  width: min(1500px, calc(100vw - 40px));
 }
 
 .dashboard-widget-settings-list,
