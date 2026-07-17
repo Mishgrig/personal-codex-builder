@@ -4,21 +4,38 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import {
   BookOpen,
+  Bookmark,
+  CalendarDays,
+  CheckSquare,
   ChevronLeft,
   ChevronRight,
+  Clock,
   CopyPlus,
+  Eye,
   FileText,
   Flag,
+  Flame,
+  Heart,
   Image as ImageIcon,
+  KeyRound,
+  Lightbulb,
+  Link2,
+  ListChecks,
   MapPin,
+  MessageSquare,
   NotebookPen,
+  Palette,
+  Pin,
   Plus,
   Save,
+  ScrollText,
   Sparkles,
+  Star,
   Swords,
   Trash2,
   Type,
   Upload,
+  WandSparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type {
@@ -63,6 +80,23 @@ const NOTE_ICONS = [
   { id: "quest", label: "Quest", icon: Flag },
   { id: "combat", label: "Combat", icon: Swords },
   { id: "text", label: "Text", icon: Type },
+  { id: "idea", label: "Idea", icon: Lightbulb },
+  { id: "task", label: "Task", icon: CheckSquare },
+  { id: "list", label: "Checklist", icon: ListChecks },
+  { id: "bookmark", label: "Bookmark", icon: Bookmark },
+  { id: "pin", label: "Pinned", icon: Pin },
+  { id: "message", label: "Message", icon: MessageSquare },
+  { id: "calendar", label: "Calendar", icon: CalendarDays },
+  { id: "time", label: "Time", icon: Clock },
+  { id: "secret", label: "Secret", icon: KeyRound },
+  { id: "watch", label: "Watch", icon: Eye },
+  { id: "heart", label: "Heart", icon: Heart },
+  { id: "star", label: "Star", icon: Star },
+  { id: "flame", label: "Urgent", icon: Flame },
+  { id: "link", label: "Link", icon: Link2 },
+  { id: "palette", label: "Palette", icon: Palette },
+  { id: "scroll", label: "Scroll", icon: ScrollText },
+  { id: "magic", label: "Magic", icon: WandSparkles },
 ] as const;
 
 export function WorkspaceNotebookPanel({
@@ -363,9 +397,32 @@ function NotebookItemEditor({
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [formatToolbarOpen, setFormatToolbarOpen] = useState(false);
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const iconCloseTimer = useRef<number | null>(null);
   const itemAssetIds = collectNotebookAssetIds(item);
   const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const linkedAssets = itemAssetIds.map((assetId) => assetMap.get(assetId) ?? null);
+
+  function clearIconCloseTimer() {
+    if (iconCloseTimer.current !== null) {
+      window.clearTimeout(iconCloseTimer.current);
+      iconCloseTimer.current = null;
+    }
+  }
+
+  function openIconPicker() {
+    clearIconCloseTimer();
+    setIconPickerOpen(true);
+  }
+
+  function scheduleIconPickerClose() {
+    clearIconCloseTimer();
+    iconCloseTimer.current = window.setTimeout(() => {
+      setIconPickerOpen(false);
+      iconCloseTimer.current = null;
+    }, 520);
+  }
+
+  useEffect(() => () => clearIconCloseTimer(), []);
 
   async function insertAssets(files: File[]) {
     if (!files.length) {
@@ -413,12 +470,12 @@ function NotebookItemEditor({
           <details
             className="notebook-icon-picker"
             open={iconPickerOpen}
-            onMouseEnter={() => setIconPickerOpen(true)}
-            onMouseLeave={() => setIconPickerOpen(false)}
-            onFocus={() => setIconPickerOpen(true)}
+            onMouseEnter={openIconPicker}
+            onMouseLeave={scheduleIconPickerClose}
+            onFocus={openIconPicker}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget)) {
-                setIconPickerOpen(false);
+                scheduleIconPickerClose();
               }
             }}
           >
@@ -427,6 +484,7 @@ function NotebookItemEditor({
               title="Choose note icon"
               onClick={(event) => {
                 event.preventDefault();
+                clearIconCloseTimer();
                 setIconPickerOpen((current) => !current);
               }}
             >

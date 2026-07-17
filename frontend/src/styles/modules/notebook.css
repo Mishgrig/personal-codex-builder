@@ -355,6 +355,16 @@
   position: relative;
 }
 
+.notebook-icon-picker[open]::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: -64px;
+  right: -64px;
+  height: 14px;
+  z-index: var(--layer-popover-active);
+}
+
 .notebook-icon-picker summary {
   list-style: none;
 }
@@ -365,19 +375,31 @@
 
 .notebook-icon-menu {
   position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: var(--layer-popover-active);
   display: grid;
-  grid-template-columns: repeat(3, 34px);
+  grid-template-columns: repeat(4, 34px);
   gap: 6px;
   padding: 8px;
   width: max-content;
   max-width: calc(100vw - 36px);
+  max-height: min(264px, calc(100vh - 140px));
+  overflow: auto;
   border: 1px solid rgba(126, 82, 54, 0.16);
   border-radius: 14px;
   background: rgba(255, 251, 243, 0.98);
   box-shadow: 0 16px 34px rgba(82, 53, 35, 0.14);
+}
+
+.notebook-icon-menu::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -10px;
+  height: 10px;
 }
 
 .notebook-icon-menu .icon-button.active {
