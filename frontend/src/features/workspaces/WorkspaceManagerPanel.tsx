@@ -21,6 +21,8 @@ import type {
   WorkspaceBackup,
   WorkspaceCreatePayload,
   WorkspaceHealth,
+  WorkspacePortability,
+  WorkspaceShareMode,
   WorkspaceSummary,
 } from "../../types/models";
 import { AssetLibraryPanel } from "./AssetLibraryPanel";
@@ -38,6 +40,7 @@ interface WorkspaceManagerPanelProps {
   archivedWorkspaces: WorkspaceSummary[];
   backups: WorkspaceBackup[];
   health: WorkspaceHealth | null;
+  portability: WorkspacePortability | null;
   assetHealth: WorkspaceAssetHealth | null;
   assets: WorkspaceAsset[];
   message: string | null;
@@ -56,11 +59,13 @@ interface WorkspaceManagerPanelProps {
   onRepairWorkspaceHealth: (action: string) => Promise<void>;
   onRepairAssetHealth: (action: string) => Promise<void>;
   onRenameWorkspace: (name: string, description: string) => Promise<void>;
+  onUpdateWorkspacePreferences: (patch: Record<string, unknown>) => void;
   onDuplicateWorkspace: (name: string) => Promise<void>;
   onDeleteWorkspace: () => Promise<void>;
   onCreateBackup: () => Promise<unknown>;
   onExportWorkspace: () => Promise<unknown>;
   onExportWorkspaceData: (includeAssetIds: boolean) => Promise<unknown>;
+  onShareSelectedCard: (targetWorkspaceSlug: string, mode: WorkspaceShareMode) => Promise<unknown>;
   onArchiveWorkspace: () => Promise<unknown>;
   onUnarchiveWorkspace: (slug: string) => Promise<unknown>;
   onImportWorkspace: (file: File, name?: string) => Promise<unknown>;
@@ -94,6 +99,7 @@ export function WorkspaceManagerPanel({
   archivedWorkspaces,
   backups,
   health,
+  portability,
   assetHealth,
   assets,
   message,
@@ -112,11 +118,13 @@ export function WorkspaceManagerPanel({
   onRepairWorkspaceHealth,
   onRepairAssetHealth,
   onRenameWorkspace,
+  onUpdateWorkspacePreferences,
   onDuplicateWorkspace,
   onDeleteWorkspace,
   onCreateBackup,
   onExportWorkspace,
   onExportWorkspaceData,
+  onShareSelectedCard,
   onArchiveWorkspace,
   onUnarchiveWorkspace,
   onImportWorkspace,
@@ -131,12 +139,15 @@ export function WorkspaceManagerPanel({
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [newWorkspaceDescription, setNewWorkspaceDescription] = useState("");
   const [newWorkspaceTheme, setNewWorkspaceTheme] = useState("fantasy");
+  const [shareTargetSlug, setShareTargetSlug] = useState("");
+  const [shareMode, setShareMode] = useState<WorkspaceShareMode>("snapshot");
 
   useEffect(() => {
     setWorkspaceName(activeWorkspace?.name ?? "");
     setWorkspaceDescription(activeWorkspace?.description ?? "");
     setDuplicateName(activeWorkspace ? `${activeWorkspace.name} Copy` : "");
-  }, [activeWorkspace]);
+    setShareTargetSlug(workspaces.find((workspace) => workspace.slug !== activeWorkspace?.slug)?.slug ?? "");
+  }, [activeWorkspace, workspaces]);
 
   const statusTone = useMemo(() => {
     if (backendStatus !== "ok") {
@@ -179,10 +190,10 @@ export function WorkspaceManagerPanel({
       <div className="modal-card workspace-manager-modal" onClick={(event) => event.stopPropagation()}>
         <div className="workspace-manager-header">
           <div>
-            <h2>Manage databases</h2>
-            <p>Keep local databases tidy, backed up, and easy to switch without cluttering the main workspace.</p>
+            <h2>Manage worlds</h2>
+            <p>Keep local worlds tidy, backed up, and easy to switch without cluttering the main workspace.</p>
           </div>
-          <IconButton title="Close database manager" aria-label="Close database manager" onClick={onClose}>
+          <IconButton title="Close world manager" aria-label="Close world manager" onClick={onClose}>
             <X size={16} />
           </IconButton>
         </div>
@@ -191,8 +202,8 @@ export function WorkspaceManagerPanel({
 
         <section className="workspace-manager-grid">
           <PanelCard
-            title="Databases"
-            subtitle="Choose the active local database, change the order, or create a new one."
+            title="Worlds"
+            subtitle="Choose the active local world, change the order, or create a new one."
             actions={<StatusBadge>{workspaces.length} active</StatusBadge>}
           >
             <div className="database-manager-list">
@@ -208,11 +219,16 @@ export function WorkspaceManagerPanel({
                       onClick={() => onSelectWorkspace(workspace.slug)}
                     >
                       <strong>{workspace.name}</strong>
-                      <span>
-                        {workspace.card_count} cards · {workspace.theme}
-                      </span>
+                      <span>{workspace.theme}</span>
                     </button>
                     <div className="database-manager-actions">
+                      <button
+                        className="secondary-button small"
+                        disabled={busy}
+                        onClick={() => onSelectWorkspace(workspace.slug)}
+                      >
+                        Manage world
+                      </button>
                       <IconButton
                         title="Move up"
                         aria-label={`Move ${workspace.name} up`}
@@ -234,20 +250,20 @@ export function WorkspaceManagerPanel({
                 ))
               ) : (
                 <StateNotice
-                  title="No active databases"
-                  description="Create a new database or unarchive an older one to start working."
+                  title="No active worlds"
+                  description="Create a new world or unarchive an older one to start working."
                 />
               )}
             </div>
 
             <div className="stack-form compact-top-gap">
               <label className="field-stack">
-                <span>New database name</span>
+                <span>New world name</span>
                 <input
                   className="themed-input"
                   value={newWorkspaceName}
                   onChange={(event) => setNewWorkspaceName(event.target.value)}
-                  placeholder="Personal Atlas"
+                  placeholder="Personal Wiki"
                 />
               </label>
               <label className="field-stack">
@@ -277,14 +293,14 @@ export function WorkspaceManagerPanel({
                 onClick={() => void submitWorkspaceCreate()}
               >
                 <FolderPlus size={15} />
-                Create database
+                Create world
               </button>
             </div>
           </PanelCard>
 
           <PanelCard
-            title="Local Status"
-            subtitle="Everything important about the local app, active workspace, and storage state."
+            title="Status"
+            subtitle="Local app, active database, and storage state."
             actions={
               <StatusBadge tone={statusTone}>
                 {backendStatus === "ok" ? "Backend running" : "Needs attention"}
@@ -293,7 +309,7 @@ export function WorkspaceManagerPanel({
           >
             <div className="meta-grid">
               <div className="meta-item">
-                <span>Database</span>
+                <span>World</span>
                 <strong>{activeWorkspace?.name ?? "No active workspace"}</strong>
               </div>
               <div className="meta-item">
@@ -312,42 +328,68 @@ export function WorkspaceManagerPanel({
           </PanelCard>
 
           <PanelCard
-            title="Selected database"
+            title="Manage world"
             subtitle={
               activeWorkspace
                 ? `Manage ${activeWorkspace.name} without leaving the local app.`
-                : "Choose a database to edit its details, export, archive, or remove it."
+                : "Choose a world to edit its details, export, archive, or remove it."
             }
           >
             {activeWorkspace ? (
               <>
                 <div className="action-strip">
-                  <button className="primary-button" disabled={busy} onClick={() => void onCreateBackup()}>
+                  <button
+                    className="primary-button"
+                    title="Create a local backup snapshot of the active database"
+                    disabled={busy}
+                    onClick={() => void onCreateBackup()}
+                  >
                     <ShieldCheck size={15} />
                     Create backup
                   </button>
-                  <button className="secondary-button" disabled={busy} onClick={() => void onExportWorkspace()}>
+                  <button
+                    className="secondary-button"
+                    title="Export this whole workspace as a portable archive"
+                    disabled={busy}
+                    onClick={() => void onExportWorkspace()}
+                  >
                     <Download size={15} />
-                    Export portable workspace
+                    Export workspace
                   </button>
-                  <button className="secondary-button" disabled={busy} onClick={() => void onExportWorkspaceData(false)}>
+                  <button
+                    className="secondary-button"
+                    title="Export structured workspace data as JSON without asset identifiers"
+                    disabled={busy}
+                    onClick={() => void onExportWorkspaceData(false)}
+                  >
                     <Download size={15} />
                     Export data JSON
                   </button>
-                  <button className="secondary-button" disabled={busy} onClick={() => void onExportWorkspaceData(true)}>
+                  <button
+                    className="secondary-button"
+                    title="Export structured workspace data as JSON and include asset IDs"
+                    disabled={busy}
+                    onClick={() => void onExportWorkspaceData(true)}
+                  >
                     <Download size={15} />
                     Data + asset ids
                   </button>
-                  <button className="secondary-button danger" disabled={busy} onClick={() => void onArchiveWorkspace()}>
+                  <button
+                    className="secondary-button danger"
+                    title="Hide this database from the active list without deleting local files"
+                    disabled={busy}
+                    onClick={() => void onArchiveWorkspace()}
+                  >
                     <Archive size={15} />
-                    Archive workspace
+                    Archive world
                   </button>
                 </div>
                 <div className="stack-form">
                   <label className="field-stack">
-                    <span>Database name</span>
+                    <span>World name</span>
                     <input
                       className="themed-input"
+                      aria-label="World name"
                       value={workspaceName}
                       onChange={(event) => setWorkspaceName(event.target.value)}
                     />
@@ -356,6 +398,7 @@ export function WorkspaceManagerPanel({
                     <span>Description</span>
                     <textarea
                       className="themed-textarea"
+                      aria-label="World description"
                       rows={3}
                       value={workspaceDescription}
                       onChange={(event) => setWorkspaceDescription(event.target.value)}
@@ -366,14 +409,70 @@ export function WorkspaceManagerPanel({
                     disabled={busy || !workspaceName.trim()}
                     onClick={() => void onRenameWorkspace(workspaceName.trim(), workspaceDescription)}
                   >
-                    Save database details
+                    Save world details
                   </button>
+                </div>
+                <div className="stack-form compact-top-gap sharing-panel">
+                  <div>
+                    <span className="field-label">Workspace Settings</span>
+                    <p className="helper-text">The same visual preferences shown on Home, duplicated here for quick world setup.</p>
+                  </div>
+                  <div className="home-settings-grid">
+                    <label className="field-stack">
+                      <span>Accent color</span>
+                      <select className="themed-select" aria-label="Accent color" value={String(activeWorkspace.ui_preferences.accent_color ?? "blue")} onChange={(event) => onUpdateWorkspacePreferences({ accent_color: event.target.value })}>
+                        <option value="blue">Cold blue</option>
+                        <option value="cyan">Glacier cyan</option>
+                        <option value="indigo">Quiet indigo</option>
+                        <option value="ice">Ice mist</option>
+                        <option value="teal">Teal</option>
+                        <option value="gold">Gold</option>
+                        <option value="slate">Slate</option>
+                      </select>
+                    </label>
+                    <label className="field-stack">
+                      <span>Density</span>
+                      <select className="themed-select" aria-label="Density" value={String(activeWorkspace.ui_preferences.density ?? "comfortable")} onChange={(event) => onUpdateWorkspacePreferences({ density: event.target.value })}>
+                        <option value="comfortable">Comfortable</option>
+                        <option value="balanced">Balanced</option>
+                        <option value="compact">Compact</option>
+                      </select>
+                    </label>
+                    <label className="field-stack">
+                      <span>Text scale</span>
+                      <select className="themed-select" aria-label="Text scale" value={String(activeWorkspace.ui_preferences.text_scale ?? "100")} onChange={(event) => onUpdateWorkspacePreferences({ text_scale: event.target.value })}>
+                        <option value="90">90%</option>
+                        <option value="95">95%</option>
+                        <option value="100">100%</option>
+                        <option value="105">105%</option>
+                        <option value="110">110%</option>
+                        <option value="118">118%</option>
+                      </select>
+                    </label>
+                    <label className="field-stack">
+                      <span>Typography</span>
+                      <select className="themed-select" aria-label="Typography" value={String(activeWorkspace.ui_preferences.typography_preset ?? "literary")} onChange={(event) => onUpdateWorkspacePreferences({ typography_preset: event.target.value })}>
+                        <option value="literary">Literary serif</option>
+                        <option value="editorial">Editorial</option>
+                        <option value="crisp">Crisp sans</option>
+                        <option value="technical">Technical mono</option>
+                      </select>
+                    </label>
+                    <label className="field-stack">
+                      <span>Detail placement</span>
+                      <select className="themed-select" aria-label="Detail placement" value={String(activeWorkspace.ui_preferences.preferred_detail_placement ?? "right")} onChange={(event) => onUpdateWorkspacePreferences({ preferred_detail_placement: event.target.value })}>
+                        <option value="right">Right side</option>
+                        <option value="bottom">Below results</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <div className="stack-form compact-top-gap">
                   <label className="field-stack">
                     <span>Duplicate as</span>
                     <input
                       className="themed-input"
+                      aria-label="Duplicate world name"
                       value={duplicateName}
                       onChange={(event) => setDuplicateName(event.target.value)}
                     />
@@ -381,19 +480,90 @@ export function WorkspaceManagerPanel({
                   <div className="action-strip">
                     <button
                       className="secondary-button"
+                      title="Create a full local copy of the active database"
                       disabled={busy || !duplicateName.trim()}
                       onClick={() => void onDuplicateWorkspace(duplicateName.trim())}
                     >
-                      Duplicate database
+                      Duplicate world
                     </button>
                     <button
                       className="secondary-button danger"
+                      title="Delete this database after creating a safety archive"
                       disabled={busy}
                       onClick={() => void onDeleteWorkspace()}
                     >
                       <Trash2 size={14} />
-                      Delete database
+                      Delete world
                     </button>
+                  </div>
+                </div>
+                <div className="stack-form compact-top-gap sharing-panel">
+                  <div>
+                    <span className="field-label">Cross-workspace sharing</span>
+                    <p className="helper-text">
+                      Share the selected card as a snapshot copy, or register it as linked canonical content for another local database.
+                    </p>
+                  </div>
+                  <div className="meta-grid">
+                    <div className="meta-item">
+                      <span>Selected card</span>
+                      <strong>{selectedCard?.title ?? "No card selected"}</strong>
+                    </div>
+                    <div className="meta-item">
+                      <span>Mode</span>
+                      <strong>{shareMode === "snapshot" ? "Snapshot copy" : "Linked canonical"}</strong>
+                    </div>
+                  </div>
+                  <label className="field-stack">
+                    <span>Target world</span>
+                    <select
+                      className="themed-select"
+                      aria-label="Target world"
+                      value={shareTargetSlug}
+                      onChange={(event) => setShareTargetSlug(event.target.value)}
+                    >
+                      <option value="">Choose target world</option>
+                      {workspaces
+                        .filter((workspace) => workspace.slug !== activeWorkspace.slug)
+                        .map((workspace) => (
+                          <option key={workspace.slug} value={workspace.slug}>
+                            {workspace.name}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label className="field-stack">
+                    <span>Share mode</span>
+                    <select
+                      className="themed-select"
+                      aria-label="Share mode"
+                      value={shareMode}
+                      onChange={(event) => setShareMode(event.target.value as WorkspaceShareMode)}
+                    >
+                      <option value="snapshot">Snapshot copy</option>
+                      <option value="linked">Linked canonical reference</option>
+                    </select>
+                  </label>
+                  <button
+                    className="secondary-button"
+                    disabled={busy || !selectedCard || !shareTargetSlug}
+                    title="Share the selected card with another local database"
+                    onClick={() => void onShareSelectedCard(shareTargetSlug, shareMode)}
+                  >
+                    <PackagePlus size={15} />
+                    Share selected card
+                  </button>
+                  <div className="sharing-history">
+                    {(activeWorkspace.ui_preferences.cross_workspace_links as Array<Record<string, unknown>> | undefined)?.length ? (
+                      (activeWorkspace.ui_preferences.cross_workspace_links as Array<Record<string, unknown>>).slice(0, 5).map((link) => (
+                        <div className="sharing-history-row" key={String(link.id)}>
+                          <strong>{String(link.source_entity_title ?? "Shared entity")}</strong>
+                          <span>{String(link.mode)} from {String(link.source_workspace_name ?? link.source_workspace_slug ?? "workspace")}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="helper-text">No incoming shared canon has been registered for this database yet.</p>
+                    )}
                   </div>
                 </div>
                 <div className="meta-grid compact-grid">
@@ -417,8 +587,8 @@ export function WorkspaceManagerPanel({
               </>
             ) : (
               <StateNotice
-                title="No active database"
-                description="Select a database from the list above or create a fresh one."
+                title="No active world"
+                description="Select a world from the list above or create a fresh one."
               />
             )}
           </PanelCard>
@@ -496,8 +666,64 @@ export function WorkspaceManagerPanel({
           />
 
           <PanelCard
-            title="Data Health"
-            subtitle="A quick local integrity snapshot of the active workspace database and files."
+            title="Portability"
+            subtitle="Checks whether this local workspace is ready for backup, export, import and future user-managed folder sync."
+            actions={
+              portability ? (
+                <StatusBadge tone={portability.status === "ready" ? "success" : portability.status === "blocked" ? "danger" : "warning"}>
+                  {portability.status}
+                </StatusBadge>
+              ) : undefined
+            }
+          >
+            {portability ? (
+              <>
+                <div className="meta-grid">
+                  <div className="meta-item">
+                    <span>Required tables</span>
+                    <strong>{portability.required_tables.length - portability.missing_tables.length}/{portability.required_tables.length}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Missing tables</span>
+                    <strong>{portability.missing_tables.length}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Asset files</span>
+                    <strong>{portability.asset_file_count}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Backups</span>
+                    <strong>{portability.backup_count}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Exports</span>
+                    <strong>{portability.export_count}</strong>
+                  </div>
+                  <div className="meta-item">
+                    <span>Issues</span>
+                    <strong>{portability.issue_count}</strong>
+                  </div>
+                </div>
+                <div className="portability-check-list">
+                  {portability.checks.map((check) => (
+                    <div className={`portability-check ${check.status}`} key={check.key}>
+                      <strong>{check.message}</strong>
+                      <small>{check.category}</small>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <StateNotice
+                title="Portability audit will appear here"
+                description="Open a workspace to verify backup/export/import coverage for durable local data."
+              />
+            )}
+          </PanelCard>
+
+          <PanelCard
+            title="Workspace health"
+            subtitle="A quick local integrity snapshot of the active database and files."
             actions={
               health ? (
                 <StatusBadge tone={health.issue_count === 0 ? "success" : "warning"}>
@@ -556,8 +782,8 @@ export function WorkspaceManagerPanel({
           </PanelCard>
 
           <PanelCard
-            title="Backup Manager"
-            subtitle="Restore or clean up local database snapshots from inside the app."
+            title="Backups"
+            subtitle="Restore or clean up local database snapshots. Restoring creates a safety backup before replacing current data."
             actions={<StatusBadge>{backups.length} snapshots</StatusBadge>}
           >
             {backups.length ? (
@@ -600,16 +826,17 @@ export function WorkspaceManagerPanel({
           </PanelCard>
 
           <PanelCard
-            title="Import Workspace"
+            title="Import database"
             subtitle="Bring a portable `.workspace.zip` archive back into the local registry."
           >
             <div className="import-stack">
               <label className="field-stack">
                 <span>Optional name</span>
-                <input
-                  className="themed-input"
-                  value={importName}
-                  onChange={(event) => setImportName(event.target.value)}
+                  <input
+                    className="themed-input"
+                    aria-label="Optional imported workspace name"
+                    value={importName}
+                    onChange={(event) => setImportName(event.target.value)}
                   placeholder="Imported workspace name"
                 />
               </label>
@@ -620,6 +847,7 @@ export function WorkspaceManagerPanel({
                   type="file"
                   accept=".zip,.workspace.zip"
                   hidden
+                  aria-label="Choose workspace archive"
                   onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
                 />
               </label>
@@ -642,7 +870,7 @@ export function WorkspaceManagerPanel({
           </PanelCard>
 
           <PanelCard
-            title="Archived Workspaces"
+            title="Archived databases"
             subtitle="Keep old local projects out of the main list without deleting their files."
             actions={<StatusBadge>{archivedWorkspaces.length} archived</StatusBadge>}
           >

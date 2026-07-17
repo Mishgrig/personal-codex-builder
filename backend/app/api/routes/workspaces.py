@@ -8,17 +8,19 @@ from fastapi import APIRouter, File, Form, UploadFile
 
 from app.schemas.common import APIDataEnvelope, ActionStatus
 from app.schemas.workspace import (
-    WorkspaceDataExportRead,
-    WorkspaceAssetLibraryRead,
     WorkspaceAssetAttachRequest,
     WorkspaceAssetHealthRead,
+    WorkspaceAssetLibraryRead,
+    WorkspaceAssetRead,
     WorkspaceBackupRead,
     WorkspaceBackupRequest,
     WorkspaceCopy,
     WorkspaceCreate,
+    WorkspaceDataExportRead,
     WorkspaceExportRead,
     WorkspaceHealthRead,
     WorkspaceNotebookRead,
+    WorkspacePortabilityRead,
     WorkspaceRepairRead,
     WorkspaceRepairRequest,
     WorkspaceReorderRequest,
@@ -27,8 +29,10 @@ from app.schemas.workspace import (
     WorkspaceSummary,
     WorkspaceUpdate,
 )
+from app.schemas.sharing import WorkspaceShareRegistry, WorkspaceShareRequest, WorkspaceShareResult
 from app.services.export_service import export_workspace_data
-from app.services.file_service import attach_existing_asset, delete_unused_asset, list_assets
+from app.services.file_service import attach_existing_asset, delete_unused_asset, list_assets, upload_workspace_asset
+from app.services.sharing_service import list_workspace_share_links, share_workspace_entity
 from app.services.workspace_manager import get_workspace_manager
 from app.utils.rich_text import extract_plain_text
 
@@ -164,6 +168,24 @@ def export_workspace(workspace_slug: str) -> dict[str, WorkspaceExportRead]:
     return {"data": exported}
 
 
+@router.get("/{workspace_slug}/sharing", response_model=APIDataEnvelope[WorkspaceShareRegistry])
+def get_workspace_sharing(workspace_slug: str) -> dict[str, WorkspaceShareRegistry]:
+    return {
+        "data": WorkspaceShareRegistry(
+            workspace_slug=workspace_slug,
+            links=list_workspace_share_links(workspace_slug),
+        )
+    }
+
+
+@router.post("/{workspace_slug}/sharing", response_model=APIDataEnvelope[WorkspaceShareResult])
+def post_workspace_sharing(
+    workspace_slug: str,
+    payload: WorkspaceShareRequest,
+) -> dict[str, WorkspaceShareResult]:
+    return {"data": share_workspace_entity(workspace_slug, payload)}
+
+
 @router.get("/{workspace_slug}/data-export", response_model=APIDataEnvelope[WorkspaceDataExportRead])
 def get_workspace_data_export(
     workspace_slug: str,
@@ -190,6 +212,12 @@ def get_workspace_data_export(
 def get_workspace_health(workspace_slug: str) -> dict[str, WorkspaceHealthRead]:
     health = WorkspaceHealthRead(**get_workspace_manager().workspace_health(workspace_slug))
     return {"data": health}
+
+
+@router.get("/{workspace_slug}/portability", response_model=APIDataEnvelope[WorkspacePortabilityRead])
+def get_workspace_portability(workspace_slug: str) -> dict[str, WorkspacePortabilityRead]:
+    portability = WorkspacePortabilityRead(**get_workspace_manager().workspace_portability(workspace_slug))
+    return {"data": portability}
 
 
 @router.post("/{workspace_slug}/health/repair", response_model=APIDataEnvelope[WorkspaceRepairRead])
@@ -228,6 +256,21 @@ def get_workspace_assets(
     finally:
         session.close()
     return {"data": WorkspaceAssetLibraryRead.model_validate(payload)}
+
+
+@router.post("/{workspace_slug}/assets/upload", response_model=APIDataEnvelope[WorkspaceAssetRead])
+def post_workspace_asset_upload(
+    workspace_slug: str,
+    upload: UploadFile = File(...),
+) -> dict[str, WorkspaceAssetRead]:
+    session = get_workspace_manager().get_workspace_session(workspace_slug)
+    try:
+        asset = upload_workspace_asset(session, workspace_slug=workspace_slug, upload=upload)
+        payload = list_assets(session, q=asset.id)
+        item = next(entry for entry in payload["items"] if entry["id"] == asset.id)
+    finally:
+        session.close()
+    return {"data": WorkspaceAssetRead.model_validate(item)}
 
 
 @router.post("/{workspace_slug}/assets/{asset_id}/attach", response_model=APIDataEnvelope[ActionStatus])

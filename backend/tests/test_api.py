@@ -96,6 +96,334 @@ def test_workspace_reorder_persists() -> None:
     assert beta_index < alpha_index
 
 
+def test_plot_events_support_card_links_event_links_and_layout() -> None:
+    slug = _workspace_slug()
+    character = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/cards",
+            json={"title": "Captain Mira"},
+        )
+    )
+    location = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/cards",
+            json={"title": "Glass Harbor"},
+        )
+    )
+
+    first_response = client.post(
+        f"/api/workspaces/{slug}/plot-events",
+        json={
+            "title": "Arrival at Glass Harbor",
+            "description": "The crew reaches the cold harbor.",
+            "status": "active",
+            "event_date": "Act 1 / Day 2",
+            "card_ids": [character["id"]],
+        },
+    )
+    assert first_response.status_code == 200
+    first = _json_data(first_response)
+    assert first["title"] == "Arrival at Glass Harbor"
+    assert first["card_links"][0]["card_id"] == character["id"]
+    assert first["layout"]["view_id"] == "default"
+
+    second = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/plot-events",
+            json={"title": "Harbor Ambush", "description": "A follow-up danger.", "status": "draft"},
+        )
+    )
+
+    card_link_response = client.post(
+        f"/api/workspaces/{slug}/plot-events/{first['id']}/card-links",
+        json={"card_id": location["id"], "role": "location"},
+    )
+    assert card_link_response.status_code == 200
+    assert any(link["role"] == "location" for link in _json_data(card_link_response)["card_links"])
+
+    event_link_response = client.post(
+        f"/api/workspaces/{slug}/plot-events/{first['id']}/event-links",
+        json={"target_event_id": second["id"], "relation_type": "sequence", "note": "Next beat"},
+    )
+    assert event_link_response.status_code == 200
+    assert _json_data(event_link_response)["event_links"][0]["target_event_id"] == second["id"]
+
+    layout_response = client.patch(
+        f"/api/workspaces/{slug}/plot-events/{first['id']}/layout",
+        json={"view_id": "default", "x": 120, "y": 80, "width": 300, "height": 180},
+    )
+    assert layout_response.status_code == 200
+    assert _json_data(layout_response)["layout"]["x"] == 120
+
+    filtered = client.get(f"/api/workspaces/{slug}/plot-events?status=active&q=glass")
+    assert filtered.status_code == 200
+    assert _json_data(filtered)["total"] >= 1
+
+    delete_response = client.delete(f"/api/workspaces/{slug}/plot-events/{second['id']}")
+    assert delete_response.status_code == 200
+
+
+def test_boards_support_items_edges_and_layout() -> None:
+    slug = _workspace_slug()
+    card = _json_data(client.post(f"/api/workspaces/{slug}/cards", json={"title": "Frost Gate"}))
+
+    board_response = client.post(
+        f"/api/workspaces/{slug}/boards",
+        json={"title": "Act One Moodboard", "description": "Cold city references."},
+    )
+    assert board_response.status_code == 200
+    board = _json_data(board_response)
+    assert board["title"] == "Act One Moodboard"
+    assert board["items"] == []
+
+    text_item_response = client.post(
+        f"/api/workspaces/{slug}/boards/{board['id']}/items",
+        json={
+            "item_type": "text",
+            "title": "Opening mood",
+            "body_text": "Blue fog, lanterns and glass.",
+            "x": 120,
+            "y": 140,
+        },
+    )
+    assert text_item_response.status_code == 200
+    text_item = _json_data(text_item_response)["items"][0]
+    assert text_item["title"] == "Opening mood"
+    assert text_item["x"] == 120
+
+    card_item_response = client.post(
+        f"/api/workspaces/{slug}/boards/{board['id']}/items",
+        json={
+            "item_type": "card",
+            "title": "Linked location",
+            "card_id": card["id"],
+            "x": 420,
+            "y": 180,
+        },
+    )
+    assert card_item_response.status_code == 200
+    items = _json_data(card_item_response)["items"]
+    card_item = next(item for item in items if item["item_type"] == "card")
+    assert card_item["card_title"] == "Frost Gate"
+
+    edge_response = client.post(
+        f"/api/workspaces/{slug}/boards/{board['id']}/edges",
+        json={
+            "source_item_id": text_item["id"],
+            "target_item_id": card_item["id"],
+            "relation_type": "inspires",
+            "label": "sets tone",
+        },
+    )
+    assert edge_response.status_code == 200
+    assert _json_data(edge_response)["edges"][0]["label"] == "sets tone"
+
+    update_response = client.patch(
+        f"/api/workspaces/{slug}/boards/items/{text_item['id']}",
+        json={"x": 180, "y": 220, "width": 320, "height": 160},
+    )
+    assert update_response.status_code == 200
+    updated_text_item = next(item for item in _json_data(update_response)["items"] if item["id"] == text_item["id"])
+    assert updated_text_item["x"] == 180
+    assert updated_text_item["width"] == 320
+
+    boards_response = client.get(f"/api/workspaces/{slug}/boards")
+    assert boards_response.status_code == 200
+    assert _json_data(boards_response)["total"] == 1
+
+    delete_item_response = client.delete(f"/api/workspaces/{slug}/boards/items/{card_item['id']}")
+    assert delete_item_response.status_code == 200
+    assert len(_json_data(delete_item_response)["items"]) == 1
+
+
+def test_chapters_scenes_references_tokens_dice_and_asset_usage() -> None:
+    slug = _workspace_slug()
+    entity = _json_data(client.post(f"/api/workspaces/{slug}/cards", json={"title": "Captain Arven"}))
+    event = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/plot-events",
+            json={"title": "Bridge Ambush", "description": "A tense scene beat."},
+        )
+    )
+    board = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/boards",
+            json={"title": "Bridge Scene Board", "description": "Scene prep canvas."},
+        )
+    )
+    asset = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/assets/upload",
+            files={"upload": ("bridge.png", _png_bytes() + b"chapter-scene", "image/png")},
+        )
+    )
+
+    chapter_response = client.post(
+        f"/api/workspaces/{slug}/chapters",
+        json={
+            "title": "The Glass Bridge",
+            "description": "A playable chapter assembled from canonical workspace material.",
+            "status": "prep",
+            "cover_asset_id": asset["id"],
+        },
+    )
+    assert chapter_response.status_code == 200
+    chapter = _json_data(chapter_response)
+    assert chapter["title"] == "The Glass Bridge"
+    assert chapter["cover_asset_id"] == asset["id"]
+
+    chapter_ref_response = client.post(
+        f"/api/workspaces/{slug}/chapters/{chapter['id']}/references",
+        json={"target_type": "entity", "target_id": str(entity["id"]), "role": "cast"},
+    )
+    assert chapter_ref_response.status_code == 200
+    assert _json_data(chapter_ref_response)["references"][0]["role"] == "cast"
+
+    scene_response = client.post(
+        f"/api/workspaces/{slug}/chapters/{chapter['id']}/scenes",
+        json={
+            "title": "Ambush on the Bridge",
+            "summary": "Run the opening encounter with a strong visual background.",
+            "background_asset_id": asset["id"],
+            "map_asset_id": asset["id"],
+            "gm_notes_text": "Keep the hidden archer off-screen.",
+            "player_notes_text": "The bridge glows under the moon.",
+        },
+    )
+    assert scene_response.status_code == 200
+    scene = _json_data(scene_response)["scenes"][0]
+    assert scene["background_asset_id"] == asset["id"]
+
+    scene_ref_response = client.post(
+        f"/api/workspaces/{slug}/chapters/scenes/{scene['id']}/references",
+        json={"target_type": "board", "target_id": str(board["id"]), "role": "prep", "visibility": "gm"},
+    )
+    assert scene_ref_response.status_code == 200
+    assert _json_data(scene_ref_response)["scenes"][0]["references"][0]["target_type"] == "board"
+
+    event_ref_response = client.post(
+        f"/api/workspaces/{slug}/chapters/scenes/{scene['id']}/references",
+        json={"target_type": "event", "target_id": str(event["id"]), "role": "timeline", "visibility": "players"},
+    )
+    assert event_ref_response.status_code == 200
+    scene = _json_data(event_ref_response)["scenes"][0]
+    assert any(reference["visibility"] == "players" for reference in scene["references"])
+
+    token_response = client.post(
+        f"/api/workspaces/{slug}/chapters/scenes/{scene['id']}/tokens",
+        json={"label": "Captain token", "card_id": entity["id"], "asset_id": asset["id"], "visibility": "players", "x": 240, "y": 180},
+    )
+    assert token_response.status_code == 200
+    scene = _json_data(token_response)["scenes"][0]
+    assert scene["tokens"][0]["card_title"] == "Captain Arven"
+
+    dice_response = client.post(
+        f"/api/workspaces/{slug}/chapters/scenes/{scene['id']}/dice-shortcuts",
+        json={"label": "Longbow attack", "formula": "1d20+5", "visibility": "gm"},
+    )
+    assert dice_response.status_code == 200
+    scene = _json_data(dice_response)["scenes"][0]
+    assert scene["dice_shortcuts"][0]["formula"] == "1d20+5"
+
+    quick_note_response = client.patch(
+        f"/api/workspaces/{slug}/chapters/scenes/{scene['id']}",
+        json={"quick_notes_json": [{"id": "note-1", "text": "Players spared the guard.", "visibility": "gm"}]},
+    )
+    assert quick_note_response.status_code == 200
+    assert _json_data(quick_note_response)["scenes"][0]["quick_notes_json"][0]["text"] == "Players spared the guard."
+
+    assets = _json_data(client.get(f"/api/workspaces/{slug}/assets?q={asset['id']}"))
+    usages = assets["items"][0]["usages"]
+    assert any(usage["usage_type"] == "chapter" and usage["asset_role"] == "cover" for usage in usages)
+    assert any(usage["usage_type"] == "scene" and usage["asset_role"] == "background" for usage in usages)
+    assert any(usage["usage_type"] == "scene_token" for usage in usages)
+
+
+def test_character_groups_and_relationship_graph_layout() -> None:
+    slug = _workspace_slug()
+    schema_response = client.put(
+        f"/api/workspaces/{slug}/schemas/character",
+        json={
+            "id": "character",
+            "label": "Character",
+            "description": "Character cards",
+            "icon": "C",
+            "field_order": ["group", "role"],
+            "fields": [
+                {"field_id": "group", "label": "Group", "kind": "text", "show_in_filters": True},
+                {"field_id": "role", "label": "Role", "kind": "text", "show_in_filters": True},
+            ],
+        },
+    )
+    assert schema_response.status_code == 200
+    first = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/cards",
+            json={"title": "Mira", "schema_id": "character"},
+        )
+    )
+    second = _json_data(
+        client.post(
+            f"/api/workspaces/{slug}/cards",
+            json={"title": "Ivo", "schema_id": "character"},
+        )
+    )
+
+    group_response = client.post(
+        f"/api/workspaces/{slug}/characters/groups",
+        json={"name": "Harbor Crew", "slug": "harbor-crew", "color": "#38bdf8"},
+    )
+    assert group_response.status_code == 200
+    group = _json_data(group_response)
+    assert group["slug"] == "harbor-crew"
+
+    update_first = client.patch(
+        f"/api/workspaces/{slug}/cards/{first['id']}",
+        json={"dynamic_fields": {"group": "Harbor Crew", "role": "Captain"}},
+    )
+    assert update_first.status_code == 200
+    update_second = client.patch(
+        f"/api/workspaces/{slug}/cards/{second['id']}",
+        json={"dynamic_fields": {"group": "Harbor Crew", "role": "Navigator"}},
+    )
+    assert update_second.status_code == 200
+
+    relation_response = client.post(
+        f"/api/workspaces/{slug}/cards/{first['id']}/relations",
+        json={"target_card_id": second["id"], "relation_type": "ally", "note": "Sails together"},
+    )
+    assert relation_response.status_code == 200
+
+    graph_response = client.get(f"/api/workspaces/{slug}/characters/graph")
+    assert graph_response.status_code == 200
+    graph = _json_data(graph_response)
+    assert {first["id"], second["id"]}.issubset({node["id"] for node in graph["nodes"]})
+    assert any(edge["source_card_id"] == first["id"] and edge["target_card_id"] == second["id"] and edge["relation_type"] == "ally" for edge in graph["edges"])
+    assert graph["groups"][0]["character_count"] == 2
+
+    layout_response = client.patch(
+        f"/api/workspaces/{slug}/characters/graph/layout",
+        json={"graph_id": "default", "card_id": first["id"], "x": 300, "y": 180, "width": 240, "height": 130},
+    )
+    assert layout_response.status_code == 200
+    updated_node = next(node for node in _json_data(layout_response)["nodes"] if node["id"] == first["id"])
+    assert updated_node["layout"]["x"] == 300
+
+
+def test_workspace_portability_reports_durable_tables() -> None:
+    slug = _workspace_slug()
+    response = client.get(f"/api/workspaces/{slug}/portability")
+    assert response.status_code == 200
+    payload = _json_data(response)
+    assert payload["db_included"] is True
+    assert payload["metadata_included"] is True
+    assert "plot_events" in payload["required_tables"]
+    assert "boards" in payload["required_tables"]
+    assert "character_graph_node_layouts" in payload["required_tables"]
+    assert payload["missing_tables"] == []
+    assert payload["status"] in {"ready", "warning"}
+
+
 def test_create_card_and_search() -> None:
     slug = _workspace_slug()
     schema_response = client.put(
@@ -285,6 +613,8 @@ def test_create_card_and_search() -> None:
         files={"upload": ("note.txt", BytesIO(b'hello world'), "text/plain")},
     )
     assert orphan_upload.status_code == 200
+    attachment_search = _json_data(client.get(f"/api/workspaces/{slug}/cards?q=note"))
+    assert any(item["id"] == asset_card["id"] for item in attachment_search["items"])
     orphan_library = _json_data(client.get(f"/api/workspaces/{slug}/assets?q=note.txt"))
     orphan_asset_id = orphan_library["items"][0]["id"]
     remove_from_card = client.delete(
@@ -381,6 +711,10 @@ def test_card_type_field_changes_are_safe_and_fts_search_has_fallback(monkeypatc
         "description": "",
         "icon": "A",
         "field_order": ["origin", "power_level"],
+        "layout_json": {
+            "section_order": ["slug", "status", "body", "sources", "attachments"],
+            "hidden_sections": ["attachments"],
+        },
         "fields": [
             {
                 "field_id": "origin",
@@ -400,6 +734,8 @@ def test_card_type_field_changes_are_safe_and_fts_search_has_fallback(monkeypatc
     }
     first_schema = client.put(f"/api/workspaces/{slug}/schemas/artifact", json=schema_payload)
     assert first_schema.status_code == 200
+    first_schema_payload = _json_data(first_schema)
+    assert first_schema_payload["layout_json"]["hidden_sections"] == ["attachments"]
 
     card = _json_data(client.post(f"/api/workspaces/{slug}/cards", json={"title": "Fallback Beacon"}))
     updated_card = client.patch(
@@ -420,6 +756,10 @@ def test_card_type_field_changes_are_safe_and_fts_search_has_fallback(monkeypatc
             "description": "Evolved safely",
             "icon": "A",
             "field_order": ["origin_realm"],
+            "layout_json": {
+                "section_order": ["status", "slug", "relations", "body"],
+                "hidden_sections": ["relations"],
+            },
             "fields": [
                 {
                     "field_id": "origin_realm",
@@ -432,10 +772,13 @@ def test_card_type_field_changes_are_safe_and_fts_search_has_fallback(monkeypatc
         },
     )
     assert evolved_schema.status_code == 200
+    evolved_schema_payload = _json_data(evolved_schema)
+    assert evolved_schema_payload["layout_json"]["section_order"][:2] == ["status", "slug"]
 
     card_types = _json_data(client.get(f"/api/workspaces/{slug}/card-types"))
     artifact_type = next(item for item in card_types if item["slug"] == "artifact")
     assert artifact_type["is_active"] is True
+    assert artifact_type["layout_json"]["hidden_sections"] == ["relations"]
     assert [field["field_slug"] for field in artifact_type["fields"]] == ["origin-realm"]
 
     table_payload = _json_data(client.get(f"/api/workspaces/{slug}/card-types/artifact/table"))
@@ -718,13 +1061,14 @@ def test_health_repairs_and_asset_usage_details() -> None:
 
 def test_notebook_asset_usage_blocks_deletion() -> None:
     slug = _workspace_slug()
-    host = _json_data(client.post(f"/api/workspaces/{slug}/cards", json={"title": "Notebook Host"}))
 
     upload_response = client.post(
-        f"/api/workspaces/{slug}/cards/{host['id']}/assets/attachment",
+        f"/api/workspaces/{slug}/assets/upload",
         files={"upload": ("notebook-reference.txt", BytesIO(b"notebook asset"), "text/plain")},
     )
     assert upload_response.status_code == 200
+    uploaded_asset = _json_data(upload_response)
+    assert uploaded_asset["url"].startswith("/media/")
 
     asset_library = _json_data(client.get(f"/api/workspaces/{slug}/assets?q=notebook-reference"))
     asset_id = asset_library["items"][0]["id"]
@@ -765,11 +1109,6 @@ def test_notebook_asset_usage_blocks_deletion() -> None:
     )
     assert notebook_usage["asset_role"] == "file"
 
-    card_unlink = client.delete(
-        f"/api/workspaces/{slug}/cards/assets/{asset_id}?card_id={host['id']}"
-    )
-    assert card_unlink.status_code == 200
-
     blocked_delete = client.delete(f"/api/workspaces/{slug}/assets/{asset_id}")
     assert blocked_delete.status_code == 422
 
@@ -794,6 +1133,25 @@ def test_notebook_asset_usage_blocks_deletion() -> None:
 
     delete_after_clear = client.delete(f"/api/workspaces/{slug}/assets/{asset_id}")
     assert delete_after_clear.status_code == 200
+
+
+def test_notebook_supports_empty_items() -> None:
+    slug = _workspace_slug()
+
+    notebook_clear = client.patch(
+        f"/api/workspaces/{slug}/notebook",
+        json={
+            "body_json": {"type": "doc", "content": []},
+            "body_text": "",
+            "items": [],
+        },
+    )
+    assert notebook_clear.status_code == 200
+    assert _json_data(notebook_clear)["items"] == []
+
+    notebook_read = client.get(f"/api/workspaces/{slug}/notebook")
+    assert notebook_read.status_code == 200
+    assert _json_data(notebook_read)["items"] == []
 
 
 def test_sources_relations_backup_restore_export_import_and_archive() -> None:

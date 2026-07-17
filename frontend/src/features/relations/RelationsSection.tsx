@@ -23,6 +23,7 @@ export function RelationsSection({
   const [relationType, setRelationType] = useState("one-to-one");
   const [note, setNote] = useState("");
   const [search, setSearch] = useState("");
+  const [addingRelation, setAddingRelation] = useState(false);
   const available = candidates.filter(
     (item) =>
       item.id !== card.id &&
@@ -55,6 +56,13 @@ export function RelationsSection({
           </div>
         ))}
       </div>
+      <div className="row-actions">
+        <button className="secondary-button small" onClick={() => setAddingRelation((current) => !current)}>
+          <Link2 size={14} />
+          {addingRelation ? "Hide relation tools" : "Add relation"}
+        </button>
+      </div>
+      {addingRelation ? (
       <div className="row-actions">
         <input
           className="themed-input"
@@ -99,6 +107,7 @@ export function RelationsSection({
             setTargetCardId(null);
             setRelationType("one-to-one");
             setNote("");
+            setAddingRelation(false);
             onUpdated(updated);
           }}
         >
@@ -106,6 +115,7 @@ export function RelationsSection({
           Add
         </button>
       </div>
+      ) : null}
     </section>
   );
 }

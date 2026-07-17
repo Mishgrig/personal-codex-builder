@@ -2,7 +2,18 @@
 
 ## Project summary
 
-Personal Codex Builder is a local-first single-user knowledge base application for personal notes, atlases, codices, and structured reference data.
+Personal Codex Builder is a local-first single-user workspace for tabletop RPG game masters, RPG creators, writers, and worldbuilding authors. The product is being reoriented from a generic creative database into one modular offline prototype for worldbuilding, chapter/scene preparation, and local play.
+
+The current product source of truth is the Notion project hub:
+
+- https://app.notion.com/p/39d2e0c1694780d2b461f1af04f85464
+
+The active product model has two primary modes:
+
+- `Prep`: prepare and maintain world material.
+- `Play`: run prepared scenes.
+
+There is no separate `Review` mode in the current roadmap. Post-session cleanup belongs to `Prep`.
 
 ## Local-first principle
 
@@ -11,6 +22,17 @@ The application must remain offline local-first.
 - Runtime use must not depend on GitHub or any online service.
 - GitHub is only for source code version control, documentation backup, collaboration, and future AI-assisted review.
 - No cloud sync, online login, telemetry, remote database, or hosted runtime dependency should be added as part of GitHub synchronization.
+
+## Product direction guardrails
+
+- TTRPG/worldbuilding is core product direction, not optional future scope.
+- Do not split the product into MVP/beta/later versions in roadmap language; the current goal is one complete modular prototype.
+- Workspaces should increasingly feel like portable Worlds.
+- Cards should increasingly be treated as canonical Entities in public product language.
+- Chapter/Scene preparation and Play Mode should build on the existing workspace, card/entity, asset, relation, board, plot, notebook, backup, and export foundation.
+- Existing `Campaign/Module` language is legacy/alias terminology; public UI should use `Chapter/Scene` where possible.
+- Do not port Electron/AppBridge/better-sqlite3 code from the `НРИ стол` prototype; it is a product/reference source, not the target architecture.
+- Do not add global player visibility flags to all entities or relations. GM/player visibility belongs only inside Play Mode scene materials.
 
 ## Frontend stack
 

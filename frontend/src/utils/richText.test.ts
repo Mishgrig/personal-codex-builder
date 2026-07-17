@@ -22,6 +22,6 @@ describe("extractPlainText", () => {
           },
         ],
       }),
-    ).toBe("Workspace notes One");
+    ).toBe("Workspace notes\nOne");
   });
 });

@@ -4,7 +4,7 @@ import type { SearchFilters } from "../types/models";
 export type ViewMode = "list" | "tile";
 export type SortMode = "manual" | "az";
 export type DetailPanePosition = "right" | "bottom";
-export type WorkspaceScreen = "atlas" | "table";
+export type WorkspaceScreen = "home" | "atlas" | "characters" | "locations" | "plots" | "chapters" | "campaign" | "board" | "table";
 
 interface UIState {
   activeWorkspaceSlug: string | null;
@@ -60,7 +60,7 @@ type WorkspacePrefs = Pick<
 
 const STORAGE_KEY = "personal-codex-builder-ui-state";
 const defaultPrefs: WorkspacePrefs = {
-  activeScreen: "atlas",
+  activeScreen: "home",
   selectedCardTypeSlug: null,
   viewMode: "list",
   sortMode: "manual",
@@ -81,7 +81,7 @@ function loadStoredState(): { activeWorkspaceSlug: string | null; workspacePrefs
     const parsed = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "{}");
     const rawPrefs = parsed.workspacePrefs ?? {};
     const workspacePrefs = Object.fromEntries(
-      Object.entries(rawPrefs).map(([slug, prefs]) => [slug, { ...defaultPrefs, ...(prefs as Partial<WorkspacePrefs>) }]),
+      Object.entries(rawPrefs).map(([slug, prefs]) => [slug, normalizeWorkspacePrefs(prefs as Partial<WorkspacePrefs>)]),
     ) as Record<string, WorkspacePrefs>;
     return {
       activeWorkspaceSlug: parsed.activeWorkspaceSlug ?? null,
@@ -90,6 +90,14 @@ function loadStoredState(): { activeWorkspaceSlug: string | null; workspacePrefs
   } catch {
     return { activeWorkspaceSlug: null, workspacePrefs: {} };
   }
+}
+
+function normalizeWorkspacePrefs(prefs: Partial<WorkspacePrefs> | undefined): WorkspacePrefs {
+  const next = { ...defaultPrefs, ...(prefs ?? {}) };
+  if (next.activeScreen === "campaign") {
+    next.activeScreen = "chapters";
+  }
+  return next;
 }
 
 function persistState(activeWorkspaceSlug: string | null, state: UIState) {
@@ -133,7 +141,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   schemaStudioOpen: false,
   setActiveWorkspaceSlug: (slug) =>
     set((state) => {
-      const nextPrefs = slug ? stored.workspacePrefs[slug] ?? defaultPrefs : defaultPrefs;
+      const nextPrefs = slug ? normalizeWorkspacePrefs(stored.workspacePrefs[slug]) : defaultPrefs;
       const nextState = {
         ...state,
         activeWorkspaceSlug: slug,
@@ -208,7 +216,7 @@ export const useUIStore = create<UIState>((set, get) => ({
     }),
   setNotebookRatio: (value) =>
     set((state) => {
-      const nextState = { ...state, notebookRatio: Math.min(0.4, Math.max(0.14, value)) };
+      const nextState = { ...state, notebookRatio: Math.min(0.68, Math.max(0.06, value)) };
       persistState(state.activeWorkspaceSlug, nextState as UIState);
       return nextState;
     }),

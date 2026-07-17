@@ -88,6 +88,42 @@ def _serialize_asset_usages(asset: Asset) -> list[dict[str, str | int | None]]:
                 "asset_role": link.item_type,
             }
         )
+    for chapter in asset.chapter_cover_links:
+        usages.append(
+            {
+                "usage_type": "chapter",
+                "label": chapter.title,
+                "card_id": None,
+                "asset_role": "cover",
+            }
+        )
+    for scene in asset.scene_background_links:
+        usages.append(
+            {
+                "usage_type": "scene",
+                "label": scene.title,
+                "card_id": None,
+                "asset_role": "background",
+            }
+        )
+    for scene in asset.scene_map_links:
+        usages.append(
+            {
+                "usage_type": "scene",
+                "label": scene.title,
+                "card_id": None,
+                "asset_role": "map",
+            }
+        )
+    for token in asset.scene_token_links:
+        usages.append(
+            {
+                "usage_type": "scene_token",
+                "label": token.label or f"Scene token {token.id}",
+                "card_id": token.card_id,
+                "asset_role": "token",
+            }
+        )
     return usages
 
 
@@ -286,7 +322,16 @@ def delete_asset(session: Session, *, workspace_slug: str, asset_id: int | str, 
             session.add(card)
         session.flush()
         session.refresh(asset)
-        if asset.gallery_links or asset.attachment_links or asset.source_links or asset.notebook_links:
+        if (
+            asset.gallery_links
+            or asset.attachment_links
+            or asset.source_links
+            or asset.notebook_links
+            or asset.chapter_cover_links
+            or asset.scene_background_links
+            or asset.scene_map_links
+            or asset.scene_token_links
+        ):
             session.commit()
             refreshed_card = session.get(Card, affected_card_id)
             if refreshed_card:
@@ -294,8 +339,14 @@ def delete_asset(session: Session, *, workspace_slug: str, asset_id: int | str, 
                 session.commit()
             return affected_card_id
 
-    if asset.notebook_links:
-        raise ConflictError("This asset is still used in the workspace notebook and cannot be deleted.")
+    if (
+        asset.notebook_links
+        or asset.chapter_cover_links
+        or asset.scene_background_links
+        or asset.scene_map_links
+        or asset.scene_token_links
+    ):
+        raise ConflictError("This asset is still used by a workspace module and cannot be deleted.")
 
     file_path = get_settings().workspaces_dir / asset.relative_path
     if file_path.exists():
@@ -496,12 +547,25 @@ def delete_unused_asset(session: Session, *, asset_id: str) -> None:
             selectinload(Asset.attachment_links),
             selectinload(Asset.source_links),
             selectinload(Asset.notebook_links),
+            selectinload(Asset.chapter_cover_links),
+            selectinload(Asset.scene_background_links),
+            selectinload(Asset.scene_map_links),
+            selectinload(Asset.scene_token_links),
         )
         .where(Asset.id == asset_id)
     ).scalar_one_or_none()
     if not asset:
         raise NotFoundError("Asset was not found.")
-    if asset.gallery_links or asset.attachment_links or asset.source_links or asset.notebook_links:
+    if (
+        asset.gallery_links
+        or asset.attachment_links
+        or asset.source_links
+        or asset.notebook_links
+        or asset.chapter_cover_links
+        or asset.scene_background_links
+        or asset.scene_map_links
+        or asset.scene_token_links
+    ):
         usages = _serialize_asset_usages(asset)
         raise ValidationAPIError(
             "This asset is still in use and cannot be deleted from the Asset Library.",
@@ -556,6 +620,20 @@ def register_imported_asset(
     return asset
 
 
+def upload_workspace_asset(session: Session, *, workspace_slug: str, upload: UploadFile) -> Asset:
+    content = _read_upload_bytes(upload)
+    asset = register_imported_asset(
+        session,
+        workspace_slug=workspace_slug,
+        original_filename=upload.filename or "workspace-file",
+        content=content,
+        mime_type=upload.content_type or "",
+    )
+    session.commit()
+    session.refresh(asset)
+    return asset
+
+
 def list_assets(session: Session, *, q: str = "", asset_type: str | None = None) -> dict:
     statement = (
         select(Asset)
@@ -564,6 +642,10 @@ def list_assets(session: Session, *, q: str = "", asset_type: str | None = None)
             selectinload(Asset.attachment_links).selectinload(CardAttachmentAsset.card),
             selectinload(Asset.source_links).selectinload(CardSourceAsset.source).selectinload(CardSource.card),
             selectinload(Asset.notebook_links),
+            selectinload(Asset.chapter_cover_links),
+            selectinload(Asset.scene_background_links),
+            selectinload(Asset.scene_map_links),
+            selectinload(Asset.scene_token_links),
         )
         .order_by(Asset.created_at.desc(), Asset.id.desc())
     )

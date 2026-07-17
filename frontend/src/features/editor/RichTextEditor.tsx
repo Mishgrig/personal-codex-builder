@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type React from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -7,32 +8,86 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Bold, Copy, Italic, List, ListOrdered, Paintbrush, Pipette, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import {
+  Bold,
+  Check,
+  ChevronDown,
+  Code2,
+  ClipboardCopy,
+  ClipboardPaste,
+  Eraser,
+  Heading1,
+  Heading2,
+  Heading3,
+  Highlighter,
+  Italic,
+  List,
+  ListOrdered,
+  Pilcrow,
+  Quote,
+  Redo2,
+  Underline as UnderlineIcon,
+  Undo2,
+} from "lucide-react";
+import { ColorPalettePicker } from "../../shared/components/ColorPalettePicker";
+import { extractPlainText } from "../../utils/richText";
 import { FontSize } from "./fontSizeExtension";
 
 interface RichTextEditorProps {
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
+  onTextChange?: (value: string) => void;
+  recentCustomColors?: string[];
+  onRememberCustomColor?: (color: string) => void;
+  placeholder?: string;
+  className?: string;
+  density?: "default" | "compact";
+  toolbarMode?: "inline" | "popover";
+  toolbarOpen?: boolean;
+  onToolbarOpenChange?: (open: boolean) => void;
+  showToolbarTrigger?: boolean;
 }
 
-const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
-const TEXT_COLORS = ["#f0efe6", "#d8a026", "#7dd3fc", "#fca5a5", "#86efac", "#c4b5fd"];
-const HIGHLIGHT_COLORS = ["#d8a026", "#1d4ed8", "#7c3aed", "#15803d", "#b45309", "#be123c"];
-
 interface FormatSnapshot {
-  block: "body" | "h1" | "h2" | "h3" | "bullet" | "ordered";
+  block: "body" | "h1" | "h2" | "h3" | "mono" | "bullet" | "ordered" | "quote";
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  strike: boolean;
   color: string;
   highlight: string;
   fontSize: string;
 }
 
-export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
+const BLOCK_OPTIONS: Array<{ value: FormatSnapshot["block"]; label: string; icon: React.ReactNode }> = [
+  { value: "h1", label: "Title", icon: <Heading1 size={16} /> },
+  { value: "h2", label: "Heading", icon: <Heading2 size={16} /> },
+  { value: "h3", label: "Subheading", icon: <Heading3 size={16} /> },
+  { value: "body", label: "Body text", icon: <Pilcrow size={16} /> },
+  { value: "mono", label: "Monospace", icon: <Code2 size={16} /> },
+  { value: "bullet", label: "Bulleted list", icon: <List size={16} /> },
+  { value: "ordered", label: "Numbered list", icon: <ListOrdered size={16} /> },
+  { value: "quote", label: "Block quote", icon: <Quote size={16} /> },
+];
+
+export function RichTextEditor({
+  value,
+  onChange,
+  onTextChange,
+  recentCustomColors = [],
+  onRememberCustomColor,
+  placeholder = "Write the living text of this card...",
+  className = "",
+  density = "default",
+  toolbarMode = "inline",
+  toolbarOpen,
+  onToolbarOpenChange,
+  showToolbarTrigger = true,
+}: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
   const [copiedFormat, setCopiedFormat] = useState<FormatSnapshot | null>(null);
+  const [internalToolbarOpen, setInternalToolbarOpen] = useState(false);
+  const isToolbarOpen = toolbarOpen ?? internalToolbarOpen;
+  const setToolbarOpen = onToolbarOpenChange ?? setInternalToolbarOpen;
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -52,7 +107,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         openOnClick: false,
       }),
       Placeholder.configure({
-        placeholder: "Write the living text of this card...",
+        placeholder,
       }),
       FontSize,
     ],
@@ -63,7 +118,10 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
       },
     },
     onUpdate: ({ editor: current }) => {
-      onChange(current.getJSON() as Record<string, unknown>);
+      const nextJson = current.getJSON() as Record<string, unknown>;
+      onChange(nextJson);
+      onTextChange?.(extractPlainText(nextJson));
+      window.setTimeout(() => decorateCollapsibleHeadings(current.view.dom), 0);
     },
   });
 
@@ -76,162 +134,148 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
     if (current !== incoming) {
       editor.commands.setContent(value, false);
     }
+    decorateCollapsibleHeadings(editor.view.dom);
   }, [editor, value]);
 
   if (!editor) {
     return <div className="editor-shell loading">Preparing editor…</div>;
   }
+  const block = currentBlock(editor);
+  const blockLabel = BLOCK_OPTIONS.find((option) => option.value === block)?.label ?? "Body text";
+  const toolbarContent = (
+    <>
+      <details className="editor-style-menu">
+        <summary className="toolbar-button editor-style-trigger" title="Text style" aria-label={`Text style: ${blockLabel}`}>
+          {BLOCK_OPTIONS.find((option) => option.value === block)?.icon}
+          <span>{blockLabel}</span>
+          <ChevronDown size={14} />
+        </summary>
+        <div className="editor-style-list">
+          {BLOCK_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              className={option.value === block ? "active" : ""}
+              onClick={() => applyBlock(editor, option.value)}
+              type="button"
+            >
+              <span className="editor-style-check">{option.value === block ? <Check size={15} /> : null}</span>
+              {option.icon}
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      </details>
+
+      <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" aria-label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
+        <Bold size={16} />
+      </button>
+      <button className={editor.isActive("italic") ? "toolbar-button active" : "toolbar-button"} title="Italic" aria-label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
+        <Italic size={16} />
+      </button>
+      <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" aria-label="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
+        <UnderlineIcon size={16} />
+      </button>
+      <span className="editor-toolbar-separator" aria-hidden="true" />
+      <ColorPalettePicker
+        value={(editor.getAttributes("textStyle") as { color?: string }).color}
+        label="Text color"
+        previewLabel="A"
+        align="left"
+        recentColors={recentCustomColors}
+        onChange={(color) => editor.chain().focus().setColor(color).run()}
+        onRememberColor={onRememberCustomColor}
+        onClear={() => editor.chain().focus().unsetColor().run()}
+      />
+      <ColorPalettePicker
+        value={(editor.getAttributes("highlight") as { color?: string }).color}
+        label="Highlight color"
+        icon={<Highlighter size={14} />}
+        align="left"
+        recentColors={recentCustomColors}
+        onChange={(color) => editor.chain().focus().setHighlight({ color }).run()}
+        onRememberColor={onRememberCustomColor}
+        onClear={() => editor.chain().focus().unsetHighlight().run()}
+      />
+      <button
+        className="toolbar-button"
+        title="Clear format"
+        aria-label="Clear format"
+        onClick={() => {
+          setFontSize("14");
+          editor.chain().focus().unsetHighlight().unsetColor().unsetFontSize().unsetAllMarks().clearNodes().run();
+        }}
+      >
+        <Eraser size={16} />
+      </button>
+      <button className="toolbar-button" title="Undo" aria-label="Undo" onClick={() => editor.chain().focus().undo().run()}>
+        <Undo2 size={15} />
+      </button>
+      <button className="toolbar-button" title="Redo" aria-label="Redo" onClick={() => editor.chain().focus().redo().run()}>
+        <Redo2 size={15} />
+      </button>
+      <button
+        className="toolbar-button"
+        title="Copy formatting"
+        aria-label="Copy formatting"
+        onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
+      >
+        <ClipboardCopy size={15} />
+      </button>
+      <button
+        className="toolbar-button"
+        title="Paste formatting"
+        aria-label="Paste formatting"
+        disabled={!copiedFormat}
+        onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
+      >
+        <ClipboardPaste size={15} />
+      </button>
+    </>
+  );
 
   return (
-    <div className="editor-shell">
-      <div className="editor-toolbar">
-        <select
-          className="toolbar-select"
-          value={currentBlock(editor)}
-          onChange={(event) => {
-            const next = event.target.value;
-            applyBlock(editor, next as FormatSnapshot["block"]);
-          }}
-        >
-          <option value="h1">Title (H1)</option>
-          <option value="h2">Heading (H2)</option>
-          <option value="h3">Subheading (H3)</option>
-          <option value="body">Body text</option>
-          <option value="bullet">Bulleted list</option>
-          <option value="ordered">Numbered list</option>
-        </select>
-
-        <div className="font-size-group">
-          <button className="icon-button" title="Smaller text" onClick={() => applyFont(editor, fontSize, setFontSize, -1)}>
-            -
-          </button>
-          <input
-            className="font-size-input"
-            value={fontSize}
-            onChange={(event) => {
-              setFontSize(event.target.value);
-              editor.chain().focus().setFontSize(`${event.target.value}px`).run();
-            }}
-          />
-          <button className="icon-button" title="Larger text" onClick={() => applyFont(editor, fontSize, setFontSize, 1)}>
-            +
-          </button>
-          <select
-            className="toolbar-select compact"
-            value={fontSize}
-            onChange={(event) => {
-              setFontSize(event.target.value);
-              editor.chain().focus().setFontSize(`${event.target.value}px`).run();
-            }}
-          >
-            {FONT_STEPS.map((step) => (
-              <option key={step} value={step}>
-                {step}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
-          <Bold size={15} />
-        </button>
-        <button className={editor.isActive("italic") ? "toolbar-button active" : "toolbar-button"} title="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <Italic size={15} />
-        </button>
-        <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
-          <UnderlineIcon size={15} />
-        </button>
-        <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
-          <Strikethrough size={15} />
-        </button>
-        <button className={editor.isActive("bulletList") ? "toolbar-button active" : "toolbar-button"} title="Bulleted list" onClick={() => editor.chain().focus().toggleBulletList().run()}>
-          <List size={15} />
-        </button>
-        <button className={editor.isActive("orderedList") ? "toolbar-button active" : "toolbar-button"} title="Numbered list" onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-          <ListOrdered size={15} />
-        </button>
-        <div className="color-palette-group">
-          {TEXT_COLORS.map((color) => (
-            <button
-              key={color}
-              className="color-swatch-button"
-              title={`Text color ${color}`}
-              style={{ ["--swatch-color" as string]: color }}
-              onClick={() => editor.chain().focus().setColor(color).run()}
-            />
-          ))}
-        </div>
-        <label className="color-input-shell" title="Text color">
-          <input type="color" defaultValue="#f0efe6" onChange={(event) => editor.chain().focus().setColor(event.target.value).run()} />
-        </label>
-        <button
-          className="toolbar-button"
-          title="Pick text color from screen"
-          disabled={typeof window === "undefined" || !("EyeDropper" in window)}
-          onClick={() => void pickTextColor(editor)}
-        >
-          <Pipette size={15} />
-        </button>
-        <div className="color-palette-group">
-          {HIGHLIGHT_COLORS.map((color) => (
-            <button
-              key={color}
-              className="color-swatch-button highlight"
-              title={`Highlight color ${color}`}
-              style={{ ["--swatch-color" as string]: color }}
-              onClick={() => editor.chain().focus().setHighlight({ color }).run()}
-            />
-          ))}
-        </div>
-        <label className="color-input-shell highlight" title="Highlight color">
-          <input type="color" defaultValue="#d8a026" onChange={(event) => editor.chain().focus().setHighlight({ color: event.target.value }).run()} />
-        </label>
-        <button
-          className="toolbar-button"
-          title="Clear format"
-          onClick={() => editor.chain().focus().unsetHighlight().unsetColor().unsetAllMarks().run()}
-        >
-          Clear format
-        </button>
-        <button className="toolbar-button" title="Undo" onClick={() => editor.chain().focus().undo().run()}>
-          <Undo2 size={15} />
-        </button>
-        <button className="toolbar-button" title="Redo" onClick={() => editor.chain().focus().redo().run()}>
-          <Redo2 size={15} />
-        </button>
-        <button
-          className="toolbar-button"
-          title="Copy formatting"
-          onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
-        >
-          <Copy size={15} />
-        </button>
-        <button
-          className="toolbar-button"
-          title="Paste formatting"
-          disabled={!copiedFormat}
-          onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
-        >
-          <Paintbrush size={15} />
-        </button>
-      </div>
+    <div className={`editor-shell editor-shell-${density}${className ? ` ${className}` : ""}`}>
+      {toolbarMode === "popover" ? (
+        <>
+          {showToolbarTrigger ? (
+            <div className="editor-popover-toolbar-shell">
+              <button
+                type="button"
+                className={`editor-aa-trigger${isToolbarOpen ? " active" : ""}`}
+                aria-label="Text formatting"
+                aria-expanded={isToolbarOpen}
+                onClick={() => setToolbarOpen(!isToolbarOpen)}
+              >
+                Aa
+              </button>
+            </div>
+          ) : null}
+          {isToolbarOpen ? (
+            <div
+              className="editor-toolbar editor-toolbar-popover"
+              onMouseEnter={() => setToolbarOpen(true)}
+              onMouseLeave={() => setToolbarOpen(false)}
+            >
+              {toolbarContent}
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <div className="editor-toolbar">{toolbarContent}</div>
+      )}
       <EditorContent editor={editor} />
     </div>
   );
-}
-
-function applyFont(editor: NonNullable<ReturnType<typeof useEditor>>, fontSize: string, setFontSize: (value: string) => void, delta: number) {
-  const next = String(Math.max(8, Number(fontSize || "14") + delta));
-  setFontSize(next);
-  editor.chain().focus().setFontSize(`${next}px`).run();
 }
 
 function currentBlock(editor: NonNullable<ReturnType<typeof useEditor>>): FormatSnapshot["block"] {
   if (editor.isActive("heading", { level: 1 })) return "h1";
   if (editor.isActive("heading", { level: 2 })) return "h2";
   if (editor.isActive("heading", { level: 3 })) return "h3";
+  if (editor.isActive("codeBlock")) return "mono";
   if (editor.isActive("bulletList")) return "bullet";
   if (editor.isActive("orderedList")) return "ordered";
+  if (editor.isActive("blockquote")) return "quote";
   return "body";
 }
 
@@ -248,6 +292,14 @@ function applyBlock(editor: NonNullable<ReturnType<typeof useEditor>>, block: Fo
     editor.chain().focus().toggleOrderedList().run();
     return;
   }
+  if (block === "mono") {
+    editor.chain().focus().toggleCodeBlock().run();
+    return;
+  }
+  if (block === "quote") {
+    editor.chain().focus().toggleBlockquote().run();
+    return;
+  }
   editor.chain().focus().toggleHeading({ level: Number(block.replace("h", "")) as 1 | 2 | 3 }).run();
 }
 
@@ -259,7 +311,6 @@ function readCurrentFormat(editor: NonNullable<ReturnType<typeof useEditor>>, fa
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
     underline: editor.isActive("underline"),
-    strike: editor.isActive("strike"),
     color: textStyle.color ?? "",
     highlight: highlight.color ?? "",
     fontSize: (textStyle.fontSize ?? `${fallbackFontSize}px`).replace("px", ""),
@@ -276,17 +327,49 @@ function applyCopiedFormat(
   if (snapshot.bold) editor.chain().focus().toggleBold().run();
   if (snapshot.italic) editor.chain().focus().toggleItalic().run();
   if (snapshot.underline) editor.chain().focus().toggleUnderline().run();
-  if (snapshot.strike) editor.chain().focus().toggleStrike().run();
   if (snapshot.color) editor.chain().focus().setColor(snapshot.color).run();
   if (snapshot.highlight) editor.chain().focus().setHighlight({ color: snapshot.highlight }).run();
   setFontSize(snapshot.fontSize);
 }
 
-async function pickTextColor(editor: NonNullable<ReturnType<typeof useEditor>>) {
-  if (typeof window === "undefined" || !("EyeDropper" in window)) {
-    return;
-  }
-  const eyeDropper = new (window as Window & { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper();
-  const result = await eyeDropper.open();
-  editor.chain().focus().setColor(result.sRGBHex).run();
+function decorateCollapsibleHeadings(root: HTMLElement) {
+  const headings = Array.from(root.querySelectorAll<HTMLHeadingElement>("h1, h2, h3"));
+  headings.forEach((heading, index) => {
+    heading.dataset.headingIndex = String(index);
+    heading.classList.add("collapsible-heading");
+    heading.title = "Click to collapse or expand this section";
+    heading.onclick = (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      heading.dataset.collapsed = heading.dataset.collapsed === "true" ? "false" : "true";
+      applyHeadingVisibility(root);
+    };
+  });
+  applyHeadingVisibility(root);
+}
+
+function applyHeadingVisibility(root: HTMLElement) {
+  const children = Array.from(root.children) as HTMLElement[];
+  children.forEach((child) => {
+    if (!/^H[1-3]$/.test(child.tagName)) {
+      child.hidden = false;
+    }
+  });
+
+  children.forEach((child, index) => {
+    if (!/^H[1-3]$/.test(child.tagName) || child.dataset.collapsed !== "true") {
+      child.classList.toggle("is-collapsed", child.dataset.collapsed === "true");
+      return;
+    }
+    child.classList.add("is-collapsed");
+    const level = Number(child.tagName.slice(1));
+    for (let nextIndex = index + 1; nextIndex < children.length; nextIndex += 1) {
+      const next = children[nextIndex];
+      if (/^H[1-3]$/.test(next.tagName) && Number(next.tagName.slice(1)) <= level) {
+        break;
+      }
+      next.hidden = true;
+    }
+  });
 }

@@ -5,6 +5,146 @@ from sqlalchemy.orm import Session
 from app.models.workspace import CardSchema, SchemaFieldDefinition, TaxonomyTerm, WorkspaceSetting
 from app.schemas.card import CardCreate, CardRelationCreate, CardSourceCreate, CardUpdate
 from app.services.card_service import add_relation, add_source, create_card, update_card
+from app.services.product_defaults import merge_product_ui_preferences
+
+
+def _field(field_id: str, label: str, kind: str = "text", *, sort_order: int = 0) -> SchemaFieldDefinition:
+    return SchemaFieldDefinition(
+        field_id=field_id,
+        label=label,
+        kind=kind,
+        show_in_card=True,
+        show_in_list=sort_order < 2,
+        show_in_filters=sort_order < 2,
+        sort_order=sort_order,
+    )
+
+
+def _schema(schema_id: str, label: str, description: str, fields: list[tuple[str, str, str]]) -> CardSchema:
+    card_schema = CardSchema(
+        id=schema_id,
+        label=label,
+        description=description,
+        icon=schema_id[:1].upper(),
+        field_order=[field_id for field_id, _label, _kind in fields],
+    )
+    card_schema.fields = [
+        _field(field_id, field_label, kind, sort_order=index)
+        for index, (field_id, field_label, kind) in enumerate(fields)
+    ]
+    return card_schema
+
+
+def _seed_baseline_entity_types(session: Session) -> None:
+    existing_ids = {
+        schema_id
+        for (schema_id,) in session.query(CardSchema.id).all()
+    }
+    baseline = [
+        _schema(
+            "character",
+            "Character",
+            "Player characters, protagonists and important people.",
+            [
+                ("role", "Role", "text"),
+                ("group", "Group", "text"),
+                ("motivation", "Motivation", "long_text"),
+                ("relationships", "Relationships", "long_text"),
+            ],
+        ),
+        _schema(
+            "npc",
+            "NPC",
+            "Non-player characters, patrons, rivals and allies.",
+            [
+                ("affiliation", "Affiliation", "text"),
+                ("role", "Role", "text"),
+                ("location", "Location", "text"),
+            ],
+        ),
+        _schema(
+            "creature",
+            "Creature",
+            "Creatures, monsters, species and encounter-ready beings.",
+            [
+                ("habitat", "Habitat", "text"),
+                ("threat", "Threat", "text"),
+                ("traits", "Traits", "long_text"),
+            ],
+        ),
+        _schema(
+            "location",
+            "Location",
+            "Regions, settlements, landmarks, rooms and map-ready places.",
+            [
+                ("region", "Region", "text"),
+                ("climate", "Climate", "text"),
+                ("danger", "Danger", "number"),
+            ],
+        ),
+        _schema(
+            "organization",
+            "Organization",
+            "Factions, guilds, orders, governments and social powers.",
+            [
+                ("type", "Type", "text"),
+                ("agenda", "Agenda", "long_text"),
+                ("members", "Members", "long_text"),
+            ],
+        ),
+        _schema(
+            "deity",
+            "Deity",
+            "Gods, patrons, saints, spirits and mythic powers.",
+            [
+                ("domain", "Domain", "text"),
+                ("symbol", "Symbol", "text"),
+                ("followers", "Followers", "long_text"),
+                ("rites", "Rites", "long_text"),
+            ],
+        ),
+        _schema(
+            "item",
+            "Item",
+            "Artifacts, equipment, resources and meaningful possessions.",
+            [
+                ("item_type", "Item type", "text"),
+                ("owner", "Owner", "text"),
+                ("properties", "Properties", "long_text"),
+            ],
+        ),
+        _schema(
+            "lore",
+            "Lore",
+            "General world facts, myths, history and encyclopedic notes.",
+            [
+                ("topic", "Topic", "text"),
+                ("source", "Source", "text"),
+                ("details", "Details", "long_text"),
+            ],
+        ),
+        _schema(
+            "magic",
+            "Magic",
+            "Spells, rituals, supernatural systems and magical rules.",
+            [
+                ("tradition", "Tradition", "text"),
+                ("effect", "Effect", "long_text"),
+                ("cost", "Cost", "text"),
+            ],
+        ),
+        _schema(
+            "note",
+            "Note",
+            "Loose notes, session thoughts and temporary prep material.",
+            [
+                ("context", "Context", "text"),
+                ("status", "Status", "text"),
+                ("body", "Body", "long_text"),
+            ],
+        ),
+    ]
+    session.add_all([schema for schema in baseline if schema.id not in existing_ids])
 
 
 def seed_workspace(
@@ -17,7 +157,12 @@ def seed_workspace(
     if session.get(WorkspaceSetting, 1):
         return
 
-    settings = WorkspaceSetting(name=workspace_name, description="A personal local-first codex.", theme=theme)
+    settings = WorkspaceSetting(
+        name=workspace_name,
+        description="A personal local-first RPG and worldbuilding workspace.",
+        theme=theme,
+        ui_preferences=merge_product_ui_preferences({}),
+    )
     session.add(settings)
     session.add(
         TaxonomyTerm(
@@ -28,57 +173,11 @@ def seed_workspace(
         )
     )
     session.commit()
+    _seed_baseline_entity_types(session)
+    session.commit()
 
     if not include_demo:
         return
-
-    npc_schema = CardSchema(
-        id="npc",
-        label="NPC",
-        description="People, patrons, rivals and allies.",
-        icon="☆",
-        field_order=["affiliation", "role", "location"],
-    )
-    npc_schema.fields = [
-        SchemaFieldDefinition(
-            field_id="affiliation",
-            label="Affiliation",
-            kind="text",
-            show_in_card=True,
-            show_in_list=True,
-            show_in_filters=True,
-            sort_order=0,
-        ),
-        SchemaFieldDefinition(
-            field_id="role",
-            label="Role",
-            kind="text",
-            show_in_card=True,
-            show_in_list=True,
-            sort_order=1,
-        ),
-        SchemaFieldDefinition(
-            field_id="location",
-            label="Location",
-            kind="text",
-            show_in_card=True,
-            show_in_list=False,
-            sort_order=2,
-        ),
-    ]
-    location_schema = CardSchema(
-        id="location",
-        label="Location",
-        description="Places, ports, ruins and star charts.",
-        icon="✦",
-        field_order=["region", "climate", "danger"],
-    )
-    location_schema.fields = [
-        SchemaFieldDefinition(field_id="region", label="Region", kind="text", sort_order=0),
-        SchemaFieldDefinition(field_id="climate", label="Climate", kind="text", sort_order=1),
-        SchemaFieldDefinition(field_id="danger", label="Danger", kind="number", sort_order=2),
-    ]
-    session.add_all([npc_schema, location_schema])
 
     taxonomy_seed = [
         ("domain", "world-model", "World Model", None, 0),

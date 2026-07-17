@@ -6,7 +6,13 @@ from app.models.workspace import (
     CardSchema,
     CardSource,
     CardTaxonomyTerm,
+    Chapter,
+    ChapterReference,
+    DiceShortcut,
     SchemaFieldDefinition,
+    Scene,
+    SceneReference,
+    SceneToken,
     TaxonomyTerm,
     WorkspaceSetting,
 )
@@ -22,5 +28,10 @@ __all__ = [
     "CardRelation",
     "CardSource",
     "CardAsset",
+    "Chapter",
+    "ChapterReference",
+    "Scene",
+    "SceneReference",
+    "SceneToken",
+    "DiceShortcut",
 ]
-

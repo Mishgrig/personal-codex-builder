@@ -1,34 +1,32 @@
 export function extractPlainText(node: unknown): string {
+  return extractPlainTextLines(node).join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function extractPlainTextLines(node: unknown): string[] {
   if (node == null) {
-    return "";
+    return [];
   }
   if (typeof node === "string") {
-    return node.trim();
+    return node.trim() ? [node.trim()] : [];
   }
   if (Array.isArray(node)) {
     return node
-      .map((item) => extractPlainText(item))
-      .filter(Boolean)
-      .join(" ")
-      .trim();
+      .flatMap((item) => extractPlainTextLines(item))
+      .filter(Boolean);
   }
   if (typeof node !== "object") {
-    return "";
+    return [];
   }
 
   const record = node as { type?: string; text?: string; content?: unknown[] };
-  const pieces: string[] = [];
-
   if (record.type === "text" && typeof record.text === "string" && record.text.trim()) {
-    pieces.push(record.text.trim());
+    return [record.text.trim()];
   }
 
-  for (const child of record.content ?? []) {
-    const childText = extractPlainText(child);
-    if (childText) {
-      pieces.push(childText);
-    }
+  const childLines = (record.content ?? []).flatMap((child) => extractPlainTextLines(child));
+  if (["paragraph", "heading", "listItem", "blockquote"].includes(record.type ?? "")) {
+    const line = childLines.join(" ").replace(/\s+/g, " ").trim();
+    return line ? [line] : [];
   }
-
-  return pieces.join(" ").trim();
+  return childLines;
 }

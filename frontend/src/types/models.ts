@@ -13,6 +13,7 @@ export interface WorkspaceSummary {
   created_at: string;
   updated_at: string;
   taxonomy_labels: Record<string, string>;
+  ui_preferences: Record<string, unknown>;
 }
 
 export interface WorkspaceBackup {
@@ -41,6 +42,32 @@ export interface WorkspaceDataExport {
   row_count: number;
   content_text: string;
   content_json: Array<Record<string, unknown>>;
+}
+
+export type WorkspaceShareMode = "snapshot" | "linked";
+
+export interface WorkspaceShareLink {
+  id: string;
+  mode: WorkspaceShareMode;
+  entity_type: string;
+  source_workspace_slug: string;
+  source_workspace_name: string;
+  source_entity_id: number;
+  source_entity_title: string;
+  target_workspace_slug: string;
+  target_entity_id: number | null;
+  created_at: string;
+}
+
+export interface WorkspaceShareRegistry {
+  workspace_slug: string;
+  links: WorkspaceShareLink[];
+}
+
+export interface WorkspaceShareResult {
+  mode: WorkspaceShareMode;
+  link: WorkspaceShareLink;
+  copied_card: CardDetail | null;
 }
 
 export interface WorkspaceRestoreResult {
@@ -92,6 +119,24 @@ export interface WorkspaceHealth {
   categories: Record<string, WorkspaceHealthCategory>;
 }
 
+export interface WorkspacePortability {
+  workspace_slug: string;
+  checked_at: string;
+  status: string;
+  issue_count: number;
+  required_tables: string[];
+  present_tables: string[];
+  missing_tables: string[];
+  db_included: boolean;
+  metadata_included: boolean;
+  files_dir_present: boolean;
+  asset_file_count: number;
+  backup_count: number;
+  export_count: number;
+  checks: WorkspaceHealthCheck[];
+  categories: Record<string, WorkspaceHealthCategory>;
+}
+
 export interface WorkspaceAssetHealth {
   workspace_slug: string;
   checked_at: string;
@@ -129,10 +174,12 @@ export interface WorkspaceNotebookItem {
   columns?: string[];
   rows?: string[][];
   asset_id?: string;
+  asset_ids?: string[];
   href?: string;
   label?: string;
   card_id?: number | null;
   note?: string;
+  icon?: string;
 }
 
 export interface WorkspaceNotebook {
@@ -223,6 +270,7 @@ export interface CardSchema {
   description: string;
   icon: string;
   field_order: string[];
+  layout_json: Record<string, unknown>;
   is_active: boolean;
   fields: SchemaField[];
   created_at: string;
@@ -408,6 +456,380 @@ export interface SearchResult {
   q: string;
   grouping: string;
   generated_at: string;
+}
+
+export interface PlotEventCardLink {
+  id: number;
+  card_id: number;
+  role: string;
+  card_title: string;
+  card_schema_id: string | null;
+  card_schema_label: string | null;
+  created_at: string;
+}
+
+export interface PlotEventLink {
+  id: number;
+  source_event_id: number;
+  target_event_id: number;
+  target_title: string;
+  relation_type: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlotEventLayout {
+  id: number;
+  event_id: number;
+  view_id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlotEvent {
+  id: number;
+  uid: string;
+  title: string;
+  description: string;
+  color: string;
+  status: string;
+  event_date: string | null;
+  sort_order: number;
+  card_links: PlotEventCardLink[];
+  event_links: PlotEventLink[];
+  layout: PlotEventLayout | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlotEventList {
+  items: PlotEvent[];
+  total: number;
+}
+
+export interface PlotEventCreatePayload {
+  title?: string;
+  description?: string;
+  color?: string;
+  status?: string;
+  event_date?: string | null;
+  card_ids?: number[];
+}
+
+export interface PlotEventUpdatePayload {
+  title?: string;
+  description?: string;
+  color?: string;
+  status?: string;
+  event_date?: string | null;
+  sort_order?: number;
+}
+
+export type ReferenceTargetType = "entity" | "asset" | "board" | "map" | "event" | string;
+export type PlayVisibility = "gm" | "players" | string;
+
+export interface ChapterReference {
+  id: number;
+  target_type: ReferenceTargetType;
+  target_id: string;
+  role: string;
+  label: string;
+  sort_order: number;
+  target_title: string | null;
+  target_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SceneReference extends ChapterReference {
+  visibility: PlayVisibility;
+}
+
+export interface DiceShortcut {
+  id: number;
+  chapter_id: number | null;
+  scene_id: number | null;
+  label: string;
+  formula: string;
+  visibility: PlayVisibility;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SceneToken {
+  id: number;
+  scene_id: number;
+  label: string;
+  card_id: number | null;
+  asset_id: string | null;
+  visibility: PlayVisibility;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  notes: string;
+  card_title: string | null;
+  asset_filename: string | null;
+  asset_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Scene {
+  id: number;
+  uid: string;
+  chapter_id: number;
+  title: string;
+  summary: string;
+  status: string;
+  gm_notes_json: Record<string, unknown>;
+  gm_notes_text: string;
+  player_notes_json: Record<string, unknown>;
+  player_notes_text: string;
+  quick_notes_json: Array<Record<string, unknown>>;
+  background_asset_id: string | null;
+  background_asset_url: string | null;
+  map_asset_id: string | null;
+  map_asset_url: string | null;
+  play_settings: Record<string, unknown>;
+  runtime_state: Record<string, unknown>;
+  sort_order: number;
+  references: SceneReference[];
+  tokens: SceneToken[];
+  dice_shortcuts: DiceShortcut[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Chapter {
+  id: number;
+  uid: string;
+  title: string;
+  description: string;
+  status: string;
+  notes_json: Record<string, unknown>;
+  notes_text: string;
+  cover_asset_id: string | null;
+  cover_asset_url: string | null;
+  view_settings: Record<string, unknown>;
+  sort_order: number;
+  references: ChapterReference[];
+  scenes: Scene[];
+  dice_shortcuts: DiceShortcut[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChapterList {
+  items: Chapter[];
+  total: number;
+}
+
+export interface ChapterCreatePayload {
+  title?: string;
+  description?: string;
+  status?: string;
+  notes_json?: Record<string, unknown>;
+  notes_text?: string;
+  cover_asset_id?: string | null;
+  view_settings?: Record<string, unknown>;
+  sort_order?: number;
+}
+
+export type ChapterUpdatePayload = Partial<ChapterCreatePayload>;
+
+export interface SceneCreatePayload {
+  title?: string;
+  summary?: string;
+  status?: string;
+  gm_notes_json?: Record<string, unknown>;
+  gm_notes_text?: string;
+  player_notes_json?: Record<string, unknown>;
+  player_notes_text?: string;
+  quick_notes_json?: Array<Record<string, unknown>>;
+  background_asset_id?: string | null;
+  map_asset_id?: string | null;
+  play_settings?: Record<string, unknown>;
+  runtime_state?: Record<string, unknown>;
+  sort_order?: number;
+}
+
+export type SceneUpdatePayload = Partial<SceneCreatePayload>;
+
+export interface ReferenceCreatePayload {
+  target_type: ReferenceTargetType;
+  target_id: string;
+  role?: string;
+  label?: string;
+  visibility?: PlayVisibility;
+  sort_order?: number;
+}
+
+export interface SceneTokenCreatePayload {
+  label?: string;
+  card_id?: number | null;
+  asset_id?: string | null;
+  visibility?: PlayVisibility;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  z_index?: number;
+  notes?: string;
+}
+
+export type SceneTokenUpdatePayload = Partial<SceneTokenCreatePayload>;
+
+export interface DiceShortcutCreatePayload {
+  label?: string;
+  formula?: string;
+  visibility?: PlayVisibility;
+  sort_order?: number;
+}
+
+export type DiceShortcutUpdatePayload = Partial<DiceShortcutCreatePayload>;
+
+export type BoardItemType = "text" | "quote" | "color" | "link" | "table" | "image" | "file" | "card" | string;
+
+export interface BoardItem {
+  id: number;
+  uid: string;
+  board_id: number;
+  item_type: BoardItemType;
+  title: string;
+  body_text: string;
+  body_json: Record<string, unknown>;
+  card_id: number | null;
+  asset_id: string | null;
+  href: string;
+  color: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  z_index: number;
+  card_title: string | null;
+  asset_filename: string | null;
+  asset_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BoardEdge {
+  id: number;
+  board_id: number;
+  source_item_id: number;
+  target_item_id: number;
+  relation_type: string;
+  label: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Board {
+  id: number;
+  uid: string;
+  title: string;
+  description: string;
+  view_settings: Record<string, unknown>;
+  sort_order: number;
+  items: BoardItem[];
+  edges: BoardEdge[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BoardList {
+  items: Board[];
+  total: number;
+}
+
+export interface BoardCreatePayload {
+  title?: string;
+  description?: string;
+  view_settings?: Record<string, unknown>;
+}
+
+export interface BoardUpdatePayload {
+  title?: string;
+  description?: string;
+  view_settings?: Record<string, unknown>;
+  sort_order?: number;
+}
+
+export interface BoardItemCreatePayload {
+  item_type?: BoardItemType;
+  title?: string;
+  body_text?: string;
+  body_json?: Record<string, unknown>;
+  card_id?: number | null;
+  asset_id?: string | null;
+  href?: string;
+  color?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  z_index?: number;
+}
+
+export type BoardItemUpdatePayload = Partial<BoardItemCreatePayload>;
+
+export interface CharacterGroup {
+  id: number;
+  slug: string;
+  name: string;
+  color: string;
+  description: string;
+  sort_order: number;
+  character_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CharacterGraphNodeLayout {
+  id: number | null;
+  graph_id: string;
+  card_id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface CharacterGraphNode {
+  id: number;
+  uid: string;
+  title: string;
+  summary: string;
+  group: string;
+  role: string;
+  dynamic_fields: Record<string, unknown>;
+  layout: CharacterGraphNodeLayout;
+}
+
+export interface CharacterGraphEdge {
+  id: number;
+  source_card_id: number;
+  target_card_id: number;
+  source_title: string;
+  target_title: string;
+  relation_type: string;
+  note: string;
+}
+
+export interface CharacterGraph {
+  graph_id: string;
+  groups: CharacterGroup[];
+  nodes: CharacterGraphNode[];
+  edges: CharacterGraphEdge[];
 }
 
 export interface WorkspaceCreatePayload {
