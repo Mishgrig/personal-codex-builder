@@ -406,15 +406,45 @@
 
 .dashboard-widget-setting-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 132px 54px auto auto;
+  grid-template-columns: 34px minmax(180px, 1fr) 132px 54px 34px 34px;
   gap: 8px;
   align-items: center;
+}
+
+.dashboard-widget-setting-row.dragging {
+  opacity: 0.72;
+  z-index: var(--layer-popover-active);
+}
+
+.drag-handle {
+  cursor: grab;
+  touch-action: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.settings-row-spacer {
+  width: 34px;
+  height: 34px;
 }
 
 .widget-tint-trigger {
   width: 44px;
   min-width: 44px;
   padding-inline: 9px;
+}
+
+.widget-title-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  outline: none;
 }
 
 .dashboard-inline-form,

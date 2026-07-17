@@ -1374,7 +1374,7 @@ select {
   }
 
   .dashboard-widget-setting-row {
-    grid-template-columns: minmax(0, 1fr) 112px 44px 34px 34px;
+    grid-template-columns: 30px minmax(0, 1fr) 106px 44px 30px 30px;
     gap: 6px;
   }
 

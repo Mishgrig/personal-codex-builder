@@ -11,6 +11,8 @@ interface ColorPalettePickerProps {
   triggerClassName?: string;
   previewLabel?: string;
   icon?: React.ReactNode;
+  displayColor?: string;
+  mapDisplayColor?: (color: string) => string;
 }
 
 const PALETTE_ROWS = [
@@ -35,6 +37,8 @@ export function ColorPalettePicker({
   triggerClassName = "",
   previewLabel,
   icon,
+  displayColor,
+  mapDisplayColor,
 }: ColorPalettePickerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -71,7 +75,7 @@ export function ColorPalettePicker({
   };
 
   return (
-    <div ref={rootRef} className={`color-picker ${align === "left" ? "align-left" : "align-right"}`}>
+    <div ref={rootRef} className={`color-picker ${open ? "is-open" : ""} ${align === "left" ? "align-left" : "align-right"}`}>
       <button
         type="button"
         className={`color-picker-trigger ${triggerClassName}`.trim()}
@@ -84,7 +88,7 @@ export function ColorPalettePicker({
           setCustomOpen(false);
         }}
       >
-        <span className="color-picker-trigger-swatch" style={swatchStyle(currentColor ?? undefined)} aria-hidden="true" />
+        <span className="color-picker-trigger-swatch" style={swatchStyle(displayColor ?? (currentColor ? mapDisplayColor?.(currentColor) ?? currentColor : undefined))} aria-hidden="true" />
         {icon ? <span className="color-picker-trigger-icon">{icon}</span> : null}
         {previewLabel ? <span>{previewLabel}</span> : null}
       </button>
@@ -118,7 +122,7 @@ export function ColorPalettePicker({
                     key={color}
                     type="button"
                     className={`color-picker-swatch${currentColor === color ? " active" : ""}`}
-                    style={swatchStyle(color)}
+                    style={swatchStyle(mapDisplayColor?.(color) ?? color)}
                     aria-label={`${label}: ${color}`}
                     onClick={() => selectColor(color)}
                   />

@@ -3,19 +3,20 @@ import {
   SortableContext,
   arrayMove,
   rectSortingStrategy,
+  verticalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   Activity,
-  ArrowDown,
-  ArrowUp,
   BookOpen,
   Check,
   CheckCircle2,
+  CopyPlus,
   Database,
   EyeOff,
   FolderOpen,
+  GripVertical,
   Home,
   Images,
   MapPin,
@@ -44,6 +45,8 @@ import {
   assetReminderItems,
   formatBytes,
   formatDate,
+  isDuplicableWidget,
+  isSystemWidget,
   normalizeDashboardTasks,
   normalizeWidgetLayout,
   roomLabelForCard,
@@ -51,12 +54,14 @@ import {
   truncate,
   widgetLabel,
   type DashboardTask,
-  type DashboardWidgetId,
   type DashboardWidgetLayout,
   type DashboardWidgetSize,
 } from "./dashboardModel";
 
 type WidgetTint = "system" | `#${string}`;
+type WidgetTintMap = Record<string, WidgetTint>;
+type TaskListMap = Record<string, DashboardTask[]>;
+type PinnedListMap = Record<string, number[]>;
 
 interface WorkspaceHomePaneProps {
   workspace: WorkspaceSummary;
@@ -105,14 +110,16 @@ export function WorkspaceHomePane({
 }: WorkspaceHomePaneProps) {
   const [quickNote, setQuickNote] = useState("");
   const [quickNoteState, setQuickNoteState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const [taskTitle, setTaskTitle] = useState("");
-  const [pinnedSearch, setPinnedSearch] = useState("");
+  const [taskDrafts, setTaskDrafts] = useState<Record<string, string>>({});
+  const [pinnedSearches, setPinnedSearches] = useState<Record<string, string>>({});
   const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false);
   const widgetLayout = normalizeWidgetLayout(workspace.ui_preferences.dashboard_widget_layout);
   const widgetTints = normalizeWidgetTints(workspace.ui_preferences.dashboard_widget_tints);
-  const tasks = normalizeDashboardTasks(workspace.ui_preferences.dashboard_tasks);
+  const taskLists = normalizeDashboardTaskLists(workspace.ui_preferences.dashboard_task_lists);
+  const pinnedLists = normalizePinnedLists(workspace.ui_preferences.dashboard_pinned_lists);
   const enabledWidgets = widgetLayout.filter((widget) => widget.enabled).sort((left, right) => left.order - right.order);
   const pinnedSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const widgetSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const recentCards = [...cards]
     .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
     .slice(0, 5);
@@ -146,18 +153,9 @@ export function WorkspaceHomePane({
     [recentAssets, recentCards],
   );
   const relationCount = cards.reduce((sum, card) => sum + card.mention_count, 0);
-  const todoCount = tasks.filter((task) => task.status !== "done").length;
   const assetReminderCount = assetReminderItems(assetHealth).length;
   const chapterView = workspace.ui_preferences.dashboard_chapters_view === "cards" ? "cards" : "list";
   const pinnedView = workspace.ui_preferences.dashboard_pinned_view === "cards" ? "cards" : "list";
-  const pinnedSearchResults = cards
-    .filter((card) => !pinnedCards.some((pinned) => pinned.id === card.id))
-    .filter((card) => {
-      const query = pinnedSearch.trim().toLowerCase();
-      if (!query) return false;
-      return `${card.title} ${card.schema_label ?? ""} ${roomLabelForCard(card)}`.toLowerCase().includes(query);
-    })
-    .slice(0, 6);
 
   function handleSubmitKey(event: React.KeyboardEvent<HTMLTextAreaElement>, submit: () => void) {
     if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
@@ -186,24 +184,64 @@ export function WorkspaceHomePane({
     onUpdatePreferences({ dashboard_widget_layout: nextLayout });
   }
 
-  function patchWidget(widgetId: DashboardWidgetId, patch: Partial<DashboardWidgetLayout>) {
+  function patchWidget(widgetId: string, patch: Partial<DashboardWidgetLayout>) {
     updateWidgetLayout(widgetLayout.map((widget) => (widget.id === widgetId ? { ...widget, ...patch } : widget)));
   }
 
-  function moveWidget(widgetId: DashboardWidgetId, direction: -1 | 1) {
-    const sorted = [...widgetLayout].sort((left, right) => left.order - right.order);
-    const index = sorted.findIndex((widget) => widget.id === widgetId);
-    const nextIndex = index + direction;
-    if (index < 0 || nextIndex < 0 || nextIndex >= sorted.length) {
+  function reorderWidgets(event: DragEndEvent) {
+    const activeId = String(event.active.id);
+    const overId = event.over ? String(event.over.id) : "";
+    if (!overId || activeId === overId) {
       return;
     }
-    const next = [...sorted];
-    const [moved] = next.splice(index, 1);
-    next.splice(nextIndex, 0, moved);
-    updateWidgetLayout(next.map((widget, order) => ({ ...widget, order: (order + 1) * 10 })));
+    const sorted = [...widgetLayout].sort((left, right) => left.order - right.order);
+    const oldIndex = sorted.findIndex((widget) => widget.id === activeId);
+    const newIndex = sorted.findIndex((widget) => widget.id === overId);
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+    updateWidgetLayout(arrayMove(sorted, oldIndex, newIndex).map((widget, order) => ({ ...widget, order: (order + 1) * 10 })));
   }
 
-  function patchWidgetTint(widgetId: DashboardWidgetId, tint: WidgetTint) {
+  function duplicateWidget(widget: DashboardWidgetLayout) {
+    if (!isDuplicableWidget(widget)) {
+      return;
+    }
+    const sorted = [...widgetLayout].sort((left, right) => left.order - right.order);
+    const sourceIndex = sorted.findIndex((item) => item.id === widget.id);
+    const duplicateCount = sorted.filter((item) => item.kind === widget.kind).length + 1;
+    const nextWidget: DashboardWidgetLayout = {
+      id: `${widget.kind}-${crypto.randomUUID().slice(0, 8)}`,
+      kind: widget.kind,
+      enabled: true,
+      order: widget.order + 1,
+      size: widget.size,
+      title: `${widgetLabel(widget.kind)} ${duplicateCount}`,
+    };
+    const nextLayout = [...sorted];
+    nextLayout.splice(sourceIndex >= 0 ? sourceIndex + 1 : nextLayout.length, 0, nextWidget);
+    updateWidgetLayout(nextLayout.map((item, order) => ({ ...item, order: (order + 1) * 10 })));
+  }
+
+  function deleteWidget(widget: DashboardWidgetLayout) {
+    if (isSystemWidget(widget)) {
+      return;
+    }
+    const nextTints = { ...widgetTints };
+    delete nextTints[widget.id];
+    const nextTaskLists = { ...taskLists };
+    delete nextTaskLists[widget.id];
+    const nextPinnedLists = { ...pinnedLists };
+    delete nextPinnedLists[widget.id];
+    onUpdatePreferences({
+      dashboard_widget_layout: widgetLayout.filter((item) => item.id !== widget.id).map((item, order) => ({ ...item, order: (order + 1) * 10 })),
+      dashboard_widget_tints: nextTints,
+      dashboard_task_lists: nextTaskLists,
+      dashboard_pinned_lists: nextPinnedLists,
+    });
+  }
+
+  function patchWidgetTint(widgetId: string, tint: WidgetTint) {
     onUpdatePreferences({
       dashboard_widget_tints: {
         ...widgetTints,
@@ -212,21 +250,29 @@ export function WorkspaceHomePane({
     });
   }
 
-  function widgetTint(widgetId: DashboardWidgetId) {
+  function widgetTint(widgetId: string) {
     return widgetTints[widgetId] ?? "system";
   }
 
-  function updateTasks(nextTasks: DashboardTask[]) {
-    onUpdatePreferences({ dashboard_tasks: nextTasks });
+  function tasksForWidget(widget: DashboardWidgetLayout) {
+    return widget.id === "tasks" ? normalizeDashboardTasks(workspace.ui_preferences.dashboard_tasks) : taskLists[widget.id] ?? [];
   }
 
-  function addTask() {
-    const title = taskTitle.trim();
+  function updateTasks(widget: DashboardWidgetLayout, nextTasks: DashboardTask[]) {
+    if (widget.id === "tasks") {
+      onUpdatePreferences({ dashboard_tasks: nextTasks });
+      return;
+    }
+    onUpdatePreferences({ dashboard_task_lists: { ...taskLists, [widget.id]: nextTasks } });
+  }
+
+  function addTask(widget: DashboardWidgetLayout) {
+    const title = (taskDrafts[widget.id] ?? "").trim();
     if (!title) {
       return;
     }
     const now = new Date().toISOString();
-    updateTasks([
+    updateTasks(widget, [
       {
         id: `task-${crypto.randomUUID().slice(0, 8)}`,
         title,
@@ -235,36 +281,78 @@ export function WorkspaceHomePane({
         created_at: now,
         updated_at: now,
       },
-      ...tasks,
+      ...tasksForWidget(widget),
     ]);
-    setTaskTitle("");
+    setTaskDrafts((current) => ({ ...current, [widget.id]: "" }));
   }
 
-  function patchTask(taskId: string, patch: Partial<DashboardTask>) {
-    updateTasks(tasks.map((task) => (task.id === taskId ? { ...task, ...patch, updated_at: new Date().toISOString() } : task)));
+  function patchTask(widget: DashboardWidgetLayout, taskId: string, patch: Partial<DashboardTask>) {
+    updateTasks(widget, tasksForWidget(widget).map((task) => (task.id === taskId ? { ...task, ...patch, updated_at: new Date().toISOString() } : task)));
   }
 
-  function deleteTask(taskId: string) {
-    updateTasks(tasks.filter((task) => task.id !== taskId));
+  function deleteTask(widget: DashboardWidgetLayout, taskId: string) {
+    updateTasks(widget, tasksForWidget(widget).filter((task) => task.id !== taskId));
   }
 
-  function reorderPinnedCards(event: DragEndEvent) {
-    const activeId = Number(String(event.active.id).replace("pinned-", ""));
-    const overId = event.over ? Number(String(event.over.id).replace("pinned-", "")) : NaN;
+  function pinnedCardsForWidget(widget: DashboardWidgetLayout) {
+    if (widget.id === "pinned_cards") {
+      return pinnedCards;
+    }
+    const ids = pinnedLists[widget.id] ?? [];
+    return ids.map((id) => cards.find((card) => card.id === id)).filter((card): card is CardListItem => Boolean(card));
+  }
+
+  function pinnedSearchResultsForWidget(widget: DashboardWidgetLayout, pinnedItems: CardListItem[]) {
+    const query = (pinnedSearches[widget.id] ?? "").trim().toLowerCase();
+    if (!query) {
+      return [];
+    }
+    return cards
+      .filter((card) => !pinnedItems.some((pinned) => pinned.id === card.id))
+      .filter((card) => `${card.title} ${card.schema_label ?? ""} ${roomLabelForCard(card)}`.toLowerCase().includes(query))
+      .slice(0, 6);
+  }
+
+  function pinCardToWidget(widget: DashboardWidgetLayout, cardId: number) {
+    if (widget.id === "pinned_cards") {
+      onPinCard(cardId);
+      return;
+    }
+    const nextIds = [cardId, ...(pinnedLists[widget.id] ?? []).filter((id) => id !== cardId)].slice(0, 24);
+    onUpdatePreferences({ dashboard_pinned_lists: { ...pinnedLists, [widget.id]: nextIds } });
+  }
+
+  function unpinCardFromWidget(widget: DashboardWidgetLayout, cardId: number) {
+    if (widget.id === "pinned_cards") {
+      onUnpinCard(cardId);
+      return;
+    }
+    onUpdatePreferences({ dashboard_pinned_lists: { ...pinnedLists, [widget.id]: (pinnedLists[widget.id] ?? []).filter((id) => id !== cardId) } });
+  }
+
+  function reorderPinnedCards(event: DragEndEvent, widget: DashboardWidgetLayout, widgetPinnedCards: CardListItem[]) {
+    const prefix = `pinned-${widget.id}-`;
+    const activeId = Number(String(event.active.id).replace(prefix, ""));
+    const overId = event.over ? Number(String(event.over.id).replace(prefix, "")) : NaN;
     if (!Number.isFinite(activeId) || !Number.isFinite(overId) || activeId === overId) {
       return;
     }
-    const pinnedIds = pinnedCards.map((card) => card.id);
+    const pinnedIds = widgetPinnedCards.map((card) => card.id);
     const oldIndex = pinnedIds.indexOf(activeId);
     const newIndex = pinnedIds.indexOf(overId);
     if (oldIndex < 0 || newIndex < 0) {
       return;
     }
-    onUpdatePreferences({ pinned_card_ids: arrayMove(pinnedIds, oldIndex, newIndex) });
+    const nextIds = arrayMove(pinnedIds, oldIndex, newIndex);
+    if (widget.id === "pinned_cards") {
+      onUpdatePreferences({ pinned_card_ids: nextIds });
+      return;
+    }
+    onUpdatePreferences({ dashboard_pinned_lists: { ...pinnedLists, [widget.id]: nextIds } });
   }
 
   function renderWidget(widget: DashboardWidgetLayout) {
-    if (widget.id === "recent_activity") {
+    if (widget.kind === "recent_activity") {
       return (
         <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Recent Activity" description="Recently updated entities and local assets." icon={<Activity size={18} />}>
           {activityItems.length ? (
@@ -291,7 +379,7 @@ export function WorkspaceHomePane({
       );
     }
 
-    if (widget.id === "quick_note") {
+    if (widget.kind === "quick_note") {
       return (
         <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Quick Note" description="Capture a thought directly into Notebook." icon={<NotebookPen size={18} />}>
           <div className="quick-note-card">
@@ -312,9 +400,12 @@ export function WorkspaceHomePane({
       );
     }
 
-    if (widget.id === "pinned_cards") {
+    if (widget.kind === "pinned_cards") {
+      const widgetPinnedCards = pinnedCardsForWidget(widget);
+      const pinnedSearch = pinnedSearches[widget.id] ?? "";
+      const pinnedSearchResults = pinnedSearchResultsForWidget(widget, widgetPinnedCards);
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Pinned Cards" description="Important entities from Wiki, Characters and Locations." icon={<Pin size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="Important entities from Wiki, Characters and Locations." icon={<Pin size={18} />}>
           <div className="dashboard-widget-toolbar">
             <div className="segmented-control compact">
               <button
@@ -337,7 +428,7 @@ export function WorkspaceHomePane({
               aria-label="Search cards to pin"
               value={pinnedSearch}
               placeholder="Search Wiki, Characters, Locations..."
-              onChange={(event) => setPinnedSearch(event.target.value)}
+              onChange={(event) => setPinnedSearches((current) => ({ ...current, [widget.id]: event.target.value }))}
             />
             {pinnedSearch.trim() ? (
               <div className="pinned-search-results">
@@ -347,8 +438,8 @@ export function WorkspaceHomePane({
                       className="home-card-row split"
                       key={card.id}
                       onClick={() => {
-                        onPinCard(card.id);
-                        setPinnedSearch("");
+                        pinCardToWidget(widget, card.id);
+                        setPinnedSearches((current) => ({ ...current, [widget.id]: "" }));
                       }}
                     >
                       <span>
@@ -362,18 +453,19 @@ export function WorkspaceHomePane({
                   <p className="helper-text">No matching entities.</p>
                 )}
               </div>
-            ) : null}
+          ) : null}
           </div>
-          {pinnedCards.length ? (
-            <DndContext sensors={pinnedSensors} collisionDetection={closestCenter} onDragEnd={reorderPinnedCards}>
-              <SortableContext items={pinnedCards.map((card) => `pinned-${card.id}`)} strategy={rectSortingStrategy}>
+          {widgetPinnedCards.length ? (
+            <DndContext sensors={pinnedSensors} collisionDetection={closestCenter} onDragEnd={(event) => reorderPinnedCards(event, widget, widgetPinnedCards)}>
+              <SortableContext items={widgetPinnedCards.map((card) => `pinned-${widget.id}-${card.id}`)} strategy={rectSortingStrategy}>
                 <div className={pinnedView === "cards" ? `pinned-card-grid ${widget.size}` : "home-card-list pinned-card-list"}>
-                  {pinnedCards.map((card) => (
+                  {widgetPinnedCards.map((card) => (
                     <SortablePinnedCard
-                      key={card.id}
+                      key={`${widget.id}-${card.id}`}
+                      sortableId={`pinned-${widget.id}-${card.id}`}
                       card={card}
                       onSelect={() => onSelectCard(card.id)}
-                      onUnpin={() => onUnpinCard(card.id)}
+                      onUnpin={() => unpinCardFromWidget(widget, card.id)}
                     />
                   ))}
                 </div>
@@ -386,7 +478,7 @@ export function WorkspaceHomePane({
       );
     }
 
-    if (widget.id === "chapters") {
+    if (widget.kind === "chapters") {
       return (
         <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Chapters" description={`${chapters.length} prepared chapters in this world.`} icon={<Swords size={18} />}>
           <div className="dashboard-widget-toolbar">
@@ -429,9 +521,12 @@ export function WorkspaceHomePane({
       );
     }
 
-    if (widget.id === "tasks") {
+    if (widget.kind === "tasks") {
+      const tasks = tasksForWidget(widget);
+      const taskTitle = taskDrafts[widget.id] ?? "";
+      const todoCount = tasks.filter((task) => task.status !== "done").length;
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Tasks" description={`${todoCount} open tasks stored in this world.`} icon={<CheckCircle2 size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description={`${todoCount} open tasks stored in this world.`} icon={<CheckCircle2 size={18} />}>
           <div className="dashboard-inline-form">
             <textarea
               className="themed-textarea dashboard-task-input"
@@ -439,10 +534,10 @@ export function WorkspaceHomePane({
               value={taskTitle}
               placeholder="Add a task..."
               rows={textareaRows(taskTitle)}
-              onChange={(event) => setTaskTitle(event.target.value)}
-              onKeyDown={(event) => handleSubmitKey(event, addTask)}
+              onChange={(event) => setTaskDrafts((current) => ({ ...current, [widget.id]: event.target.value }))}
+              onKeyDown={(event) => handleSubmitKey(event, () => addTask(widget))}
             />
-            <button className="secondary-button small" disabled={!taskTitle.trim()} onClick={addTask}>
+            <button className="secondary-button small" disabled={!taskTitle.trim()} onClick={() => addTask(widget)}>
               Add
             </button>
           </div>
@@ -454,7 +549,7 @@ export function WorkspaceHomePane({
                     className={task.status === "done" ? "task-check done" : "task-check"}
                     title={task.status === "done" ? "Mark task open" : "Mark task done"}
                     aria-label={`${task.status === "done" ? "Mark open" : "Mark done"}: ${task.title}`}
-                    onClick={() => patchTask(task.id, { status: task.status === "done" ? "todo" : "done" })}
+                    onClick={() => patchTask(widget, task.id, { status: task.status === "done" ? "todo" : "done" })}
                   >
                     {task.status === "done" ? <Check size={11} strokeWidth={3} /> : null}
                   </button>
@@ -464,7 +559,7 @@ export function WorkspaceHomePane({
                       aria-label={`Edit task: ${task.title}`}
                       value={task.title}
                       rows={textareaRows(task.title)}
-                      onChange={(event) => patchTask(task.id, { title: event.target.value })}
+                      onChange={(event) => patchTask(widget, task.id, { title: event.target.value })}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                           event.preventDefault();
@@ -478,7 +573,7 @@ export function WorkspaceHomePane({
                     className="mini-icon-button"
                     title="Delete task"
                     aria-label={`Delete task: ${task.title}`}
-                    onClick={() => deleteTask(task.id)}
+                    onClick={() => deleteTask(widget, task.id)}
                   >
                     <Trash2 size={13} />
                   </button>
@@ -492,7 +587,7 @@ export function WorkspaceHomePane({
       );
     }
 
-    if (widget.id === "asset_reminders") {
+    if (widget.kind === "asset_reminders") {
       const reminders = assetReminderItems(assetHealth);
       return (
         <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Asset Reminders" description={`${assetReminderCount} file-health reminders.`} icon={<Database size={18} />}>
@@ -512,7 +607,7 @@ export function WorkspaceHomePane({
       );
     }
 
-    if (widget.id === "knowledge_summary") {
+    if (widget.kind === "knowledge_summary") {
       const characterCount = cards.filter((card) => card.schema_id === "character" || card.schema_id === "npc").length;
       const locationCount = cards.filter((card) => card.schema_id === "location").length;
       return (
@@ -645,40 +740,65 @@ export function WorkspaceHomePane({
         <section className="home-panel dashboard-settings-panel">
           <div className="section-header">
             <div>
-              <h2>Dashboard widgets</h2>
+              <h2 className="dashboard-widget-title">
+                <span>Dashboard widgets</span>
+                <span className="dashboard-widget-title-icon"><SlidersHorizontal size={18} /></span>
+              </h2>
               <p className="helper-text">Enable, resize and reorder the Home widgets. These preferences stay in this local world.</p>
             </div>
-            <SlidersHorizontal size={18} />
           </div>
-          <div className="dashboard-widget-settings-list">
-            {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget, index) => (
-              <div className="dashboard-widget-setting-row" key={widget.id}>
-                <label className="tiny-toggle">
-                  <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
-                  <span>{widgetLabel(widget.id)}</span>
-                </label>
-                <select className="mini-select" value={widget.size} onChange={(event) => patchWidget(widget.id, { size: event.target.value as DashboardWidgetSize })}>
-                  <option value="compact">Compact</option>
-                  <option value="normal">Normal</option>
-                  <option value="wide">Wide</option>
-                </select>
-                <ColorPalettePicker
-                  value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
-                  label={`Widget color: ${widgetLabel(widget.id)}`}
-                  align="right"
-                  triggerClassName="widget-tint-trigger"
-                  onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
-                  onClear={() => patchWidgetTint(widget.id, "system")}
-                />
-                <button className="mini-icon-button" title="Move widget up" disabled={index === 0} onClick={() => moveWidget(widget.id, -1)}>
-                  <ArrowUp size={13} />
-                </button>
-                <button className="mini-icon-button" title="Move widget down" disabled={index === widgetLayout.length - 1} onClick={() => moveWidget(widget.id, 1)}>
-                  <ArrowDown size={13} />
-                </button>
+          <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={reorderWidgets}>
+            <SortableContext items={[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
+              <div className="dashboard-widget-settings-list">
+                {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
+                  <SortableWidgetSettingRow key={widget.id} widget={widget}>
+                    <label className="tiny-toggle">
+                      <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
+                      {isSystemWidget(widget) ? (
+                        <span>{widgetLabel(widget)}</span>
+                      ) : (
+                        <input
+                          className="widget-title-input"
+                          aria-label={`Widget title: ${widgetLabel(widget)}`}
+                          value={widgetLabel(widget)}
+                          onChange={(event) => patchWidget(widget.id, { title: event.target.value })}
+                        />
+                      )}
+                    </label>
+                    <select className="mini-select" value={widget.size} onChange={(event) => patchWidget(widget.id, { size: event.target.value as DashboardWidgetSize })}>
+                      <option value="compact">Compact</option>
+                      <option value="normal">Normal</option>
+                      <option value="wide">Wide</option>
+                    </select>
+                    <ColorPalettePicker
+                      value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
+                      label={`Widget color: ${widgetLabel(widget)}`}
+                      align="right"
+                      triggerClassName="widget-tint-trigger"
+                      onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
+                      onClear={() => patchWidgetTint(widget.id, "system")}
+                      displayColor={widgetDisplayColor(widgetTint(widget.id))}
+                      mapDisplayColor={widgetDisplayColor}
+                    />
+                    {isDuplicableWidget(widget) ? (
+                      <button className="mini-icon-button" title={`Duplicate ${widgetLabel(widget)}`} aria-label={`Duplicate ${widgetLabel(widget)}`} onClick={() => duplicateWidget(widget)}>
+                        <CopyPlus size={13} />
+                      </button>
+                    ) : (
+                      <span className="settings-row-spacer" aria-hidden="true" />
+                    )}
+                    {!isSystemWidget(widget) ? (
+                      <button className="mini-icon-button danger" title={`Delete ${widgetLabel(widget)}`} aria-label={`Delete ${widgetLabel(widget)}`} onClick={() => deleteWidget(widget)}>
+                        <Trash2 size={13} />
+                      </button>
+                    ) : (
+                      <span className="settings-row-spacer" aria-hidden="true" />
+                    )}
+                  </SortableWidgetSettingRow>
+                ))}
               </div>
-            ))}
-          </div>
+            </SortableContext>
+          </DndContext>
         </section>
       ) : null}
 
@@ -737,16 +857,43 @@ function EmptyWidget({ icon, text }: { icon: React.ReactNode; text: string }) {
   );
 }
 
+function SortableWidgetSettingRow({
+  widget,
+  children,
+}: {
+  widget: DashboardWidgetLayout;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: widget.id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`dashboard-widget-setting-row${isDragging ? " dragging" : ""}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+    >
+      <button className="mini-icon-button drag-handle" title={`Reorder ${widgetLabel(widget)}`} aria-label={`Reorder ${widgetLabel(widget)}`} {...attributes} {...listeners}>
+        <GripVertical size={14} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
 function SortablePinnedCard({
+  sortableId,
   card,
   onSelect,
   onUnpin,
 }: {
+  sortableId: string;
   card: CardListItem;
   onSelect: () => void;
   onUnpin: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: `pinned-${card.id}` });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: sortableId });
   return (
     <div
       ref={setNodeRef}
@@ -788,29 +935,15 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function normalizeWidgetTints(value: unknown): Partial<Record<DashboardWidgetId, WidgetTint>> {
+function normalizeWidgetTints(value: unknown): WidgetTintMap {
   if (!value || typeof value !== "object") {
     return {};
   }
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).filter(
-      (entry): entry is [DashboardWidgetId, WidgetTint] =>
-        isWidgetId(entry[0]) && isWidgetTint(entry[1]),
+      (entry): entry is [string, WidgetTint] => Boolean(entry[0]) && isWidgetTint(entry[1]),
     ),
   );
-}
-
-function isWidgetId(value: string): value is DashboardWidgetId {
-  return [
-    "recent_activity",
-    "quick_note",
-    "chapters",
-    "pinned_cards",
-    "tasks",
-    "asset_reminders",
-    "knowledge_summary",
-    "workspace_settings",
-  ].includes(value);
 }
 
 function isWidgetTint(value: unknown): value is WidgetTint {
@@ -819,4 +952,31 @@ function isWidgetTint(value: unknown): value is WidgetTint {
 
 function isHexColor(value: unknown): value is `#${string}` {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function normalizeDashboardTaskLists(value: unknown): TaskListMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([id]) => Boolean(id))
+      .map(([id, tasks]) => [id, normalizeDashboardTasks(tasks)]),
+  );
+}
+
+function normalizePinnedLists(value: unknown): PinnedListMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([id, list]) => [
+      id,
+      Array.isArray(list) ? list.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0) : [],
+    ]),
+  );
+}
+
+function widgetDisplayColor(color: string) {
+  return isHexColor(color) ? `color-mix(in srgb, ${color} 14%, #fffaf3)` : "transparent";
 }
