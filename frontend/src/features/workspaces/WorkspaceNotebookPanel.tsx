@@ -362,6 +362,7 @@ function NotebookItemEditor({
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [formatToolbarOpen, setFormatToolbarOpen] = useState(false);
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const itemAssetIds = collectNotebookAssetIds(item);
   const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const linkedAssets = itemAssetIds.map((assetId) => assetMap.get(assetId) ?? null);
@@ -403,12 +404,32 @@ function NotebookItemEditor({
             title="Text formatting"
             aria-label="Text formatting"
             aria-expanded={formatToolbarOpen}
+            onMouseEnter={() => setFormatToolbarOpen(true)}
+            onFocus={() => setFormatToolbarOpen(true)}
             onClick={() => setFormatToolbarOpen((current) => !current)}
           >
             Aa
           </button>
-          <details className="notebook-icon-picker">
-            <summary className="secondary-button small" title="Choose note icon">
+          <details
+            className="notebook-icon-picker"
+            open={iconPickerOpen}
+            onMouseEnter={() => setIconPickerOpen(true)}
+            onMouseLeave={() => setIconPickerOpen(false)}
+            onFocus={() => setIconPickerOpen(true)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) {
+                setIconPickerOpen(false);
+              }
+            }}
+          >
+            <summary
+              className="secondary-button small"
+              title="Choose note icon"
+              onClick={(event) => {
+                event.preventDefault();
+                setIconPickerOpen((current) => !current);
+              }}
+            >
               {noteIcon(item.icon)}
             </summary>
             <div className="notebook-icon-menu">
@@ -418,7 +439,10 @@ function NotebookItemEditor({
                   active={item.icon === option.id}
                   label={option.label}
                   icon={option.icon}
-                  onClick={() => onChange({ icon: option.id })}
+                  onClick={() => {
+                    onChange({ icon: option.id });
+                    setIconPickerOpen(false);
+                  }}
                 />
               ))}
             </div>

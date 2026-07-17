@@ -250,7 +250,15 @@ export function RichTextEditor({
               </button>
             </div>
           ) : null}
-          {isToolbarOpen ? <div className="editor-toolbar editor-toolbar-popover">{toolbarContent}</div> : null}
+          {isToolbarOpen ? (
+            <div
+              className="editor-toolbar editor-toolbar-popover"
+              onMouseEnter={() => setToolbarOpen(true)}
+              onMouseLeave={() => setToolbarOpen(false)}
+            >
+              {toolbarContent}
+            </div>
+          ) : null}
         </>
       ) : (
         <div className="editor-toolbar">{toolbarContent}</div>

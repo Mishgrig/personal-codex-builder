@@ -3,10 +3,12 @@
   max-width: min(68vw, 980px);
   max-height: calc(100vh - 116px);
   min-height: 0;
+  align-self: flex-start;
 }
 
 .notebook-panel {
-  height: 100%;
+  height: auto;
+  max-height: calc(100vh - 116px);
   padding: 18px;
   border-radius: 20px;
   border: 1px solid var(--line);
@@ -26,7 +28,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  flex: 1;
+  flex: 0 1 auto;
   min-height: 0;
 }
 
@@ -148,7 +150,7 @@
 
 .notebook-editor-header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   min-width: 0;
 }
@@ -164,12 +166,12 @@
 .notebook-title-row .notebook-icon-picker,
 .notebook-editor-tools > *,
 .notebook-editor-tools .notebook-tool-button {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
-  max-height: 36px;
-  flex: 0 0 36px;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  flex: 0 0 34px;
 }
 
 .notebook-editor-header strong {
@@ -184,17 +186,20 @@
 
 .notebook-editor-tools {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
   justify-items: center;
   align-items: center;
   gap: 5px;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+  padding-inline: 3px;
   min-width: 0;
 }
 
 .notebook-icon-picker {
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   flex: 0 0 auto;
 }
 
@@ -204,9 +209,9 @@
 .notebook-icon-picker summary {
   width: 100%;
   min-width: 0;
-  height: 36px;
-  min-height: 36px;
-  max-height: 36px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
   padding: 0;
   justify-content: center;
   white-space: nowrap;
@@ -216,13 +221,13 @@
 .notebook-save-icon {
   width: 100%;
   min-width: 0;
-  height: 36px;
+  height: 34px;
 }
 
 .notebook-editor-tools .editor-aa-trigger {
-  min-width: 36px;
-  width: 36px;
-  height: 36px;
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   font-size: 0.94rem;
 }
