@@ -361,6 +361,7 @@ function NotebookItemEditor({
 }) {
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [formatToolbarOpen, setFormatToolbarOpen] = useState(false);
   const itemAssetIds = collectNotebookAssetIds(item);
   const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const linkedAssets = itemAssetIds.map((assetId) => assetMap.get(assetId) ?? null);
@@ -395,8 +396,17 @@ function NotebookItemEditor({
   return (
     <div className="notebook-item-editor">
       <div className="notebook-editor-header">
-        <div className="notebook-title-row">
-          <strong>{notebookItemTitle(item)}</strong>
+        <div className="notebook-editor-tools">
+          <button
+            type="button"
+            className={`editor-aa-trigger notebook-tool-button${formatToolbarOpen ? " active" : ""}`}
+            title="Text formatting"
+            aria-label="Text formatting"
+            aria-expanded={formatToolbarOpen}
+            onClick={() => setFormatToolbarOpen((current) => !current)}
+          >
+            Aa
+          </button>
           <details className="notebook-icon-picker">
             <summary className="secondary-button small" title="Choose note icon">
               {noteIcon(item.icon)}
@@ -413,8 +423,6 @@ function NotebookItemEditor({
               ))}
             </div>
           </details>
-        </div>
-        <div className="notebook-editor-tools">
           <button
             className="icon-button notebook-tool-button"
             title="Duplicate note"
@@ -423,7 +431,7 @@ function NotebookItemEditor({
           >
             <CopyPlus size={14} />
           </button>
-          <label className="secondary-button small notebook-upload-button">
+          <label className="secondary-button small notebook-upload-button" title="Add file">
             <Upload size={14} />
             <span className="sr-only">{uploadState === "uploading" ? "Adding file" : "Add file"}</span>
             <input
@@ -501,6 +509,9 @@ function NotebookItemEditor({
         className="notebook-rich-editor-shell"
         density="compact"
         toolbarMode="popover"
+        toolbarOpen={formatToolbarOpen}
+        onToolbarOpenChange={setFormatToolbarOpen}
+        showToolbarTrigger={false}
         value={item.body_json ?? textToDoc(notebookItemToText(item))}
         recentCustomColors={recentCustomColors}
         onRememberCustomColor={onRememberCustomColor}

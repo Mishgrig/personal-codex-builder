@@ -43,6 +43,9 @@ interface RichTextEditorProps {
   className?: string;
   density?: "default" | "compact";
   toolbarMode?: "inline" | "popover";
+  toolbarOpen?: boolean;
+  onToolbarOpenChange?: (open: boolean) => void;
+  showToolbarTrigger?: boolean;
 }
 
 interface FormatSnapshot {
@@ -76,10 +79,15 @@ export function RichTextEditor({
   className = "",
   density = "default",
   toolbarMode = "inline",
+  toolbarOpen,
+  onToolbarOpenChange,
+  showToolbarTrigger = true,
 }: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
   const [copiedFormat, setCopiedFormat] = useState<FormatSnapshot | null>(null);
-  const [toolbarOpen, setToolbarOpen] = useState(false);
+  const [internalToolbarOpen, setInternalToolbarOpen] = useState(false);
+  const isToolbarOpen = toolbarOpen ?? internalToolbarOpen;
+  const setToolbarOpen = onToolbarOpenChange ?? setInternalToolbarOpen;
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -229,18 +237,20 @@ export function RichTextEditor({
     <div className={`editor-shell editor-shell-${density}${className ? ` ${className}` : ""}`}>
       {toolbarMode === "popover" ? (
         <>
-          <div className="editor-popover-toolbar-shell">
-            <button
-              type="button"
-              className={`editor-aa-trigger${toolbarOpen ? " active" : ""}`}
-              aria-label="Text formatting"
-              aria-expanded={toolbarOpen}
-              onClick={() => setToolbarOpen((current) => !current)}
-            >
-              Aa
-            </button>
-          </div>
-          {toolbarOpen ? <div className="editor-toolbar editor-toolbar-popover">{toolbarContent}</div> : null}
+          {showToolbarTrigger ? (
+            <div className="editor-popover-toolbar-shell">
+              <button
+                type="button"
+                className={`editor-aa-trigger${isToolbarOpen ? " active" : ""}`}
+                aria-label="Text formatting"
+                aria-expanded={isToolbarOpen}
+                onClick={() => setToolbarOpen(!isToolbarOpen)}
+              >
+                Aa
+              </button>
+            </div>
+          ) : null}
+          {isToolbarOpen ? <div className="editor-toolbar editor-toolbar-popover">{toolbarContent}</div> : null}
         </>
       ) : (
         <div className="editor-toolbar">{toolbarContent}</div>
