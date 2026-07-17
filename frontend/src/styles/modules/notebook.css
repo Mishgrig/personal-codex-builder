@@ -12,7 +12,7 @@
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(20, 29, 58, 0.9), rgba(11, 18, 36, 0.93));
   box-shadow: var(--shadow);
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -296,16 +296,16 @@
   border: 1px solid rgba(126, 82, 54, 0.14);
   border-radius: 16px;
   background: rgba(255, 251, 243, 0.82);
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 240px;
-  max-height: min(62vh, 760px);
+  max-height: none;
   overflow: hidden;
 }
 
 .notebook-rich-editor-shell .rich-body {
-  flex: 1;
   min-height: 0;
-  max-height: none;
+  height: auto;
+  max-height: min(54vh, 700px);
   overflow-y: auto;
   background: rgba(255, 251, 243, 0.9);
   color: var(--text);

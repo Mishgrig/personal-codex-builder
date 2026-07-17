@@ -43,6 +43,7 @@ interface RichTextEditorProps {
   placeholder?: string;
   className?: string;
   density?: "default" | "compact";
+  toolbarMode?: "inline" | "popover";
 }
 
 const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
@@ -78,9 +79,11 @@ export function RichTextEditor({
   placeholder = "Write the living text of this card...",
   className = "",
   density = "default",
+  toolbarMode = "inline",
 }: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
   const [copiedFormat, setCopiedFormat] = useState<FormatSnapshot | null>(null);
+  const [toolbarOpen, setToolbarOpen] = useState(false);
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -135,100 +138,118 @@ export function RichTextEditor({
   }
   const block = currentBlock(editor);
   const blockLabel = BLOCK_OPTIONS.find((option) => option.value === block)?.label ?? "Body text";
+  const toolbarContent = (
+    <>
+      <details className="editor-style-menu">
+        <summary className="toolbar-button editor-style-trigger" title="Text style" aria-label={`Text style: ${blockLabel}`}>
+          {BLOCK_OPTIONS.find((option) => option.value === block)?.icon}
+          <span>{blockLabel}</span>
+          <ChevronDown size={14} />
+        </summary>
+        <div className="editor-style-list">
+          {BLOCK_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              className={option.value === block ? "active" : ""}
+              onClick={() => applyBlock(editor, option.value)}
+              type="button"
+            >
+              <span className="editor-style-check">{option.value === block ? <Check size={15} /> : null}</span>
+              {option.icon}
+              <span>{option.label}</span>
+            </button>
+          ))}
+        </div>
+      </details>
+
+      <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" aria-label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
+        <Bold size={16} />
+      </button>
+      <button className={editor.isActive("italic") ? "toolbar-button active" : "toolbar-button"} title="Italic" aria-label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
+        <Italic size={16} />
+      </button>
+      <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" aria-label="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
+        <UnderlineIcon size={16} />
+      </button>
+      <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" aria-label="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
+        <Strikethrough size={16} />
+      </button>
+      <span className="editor-toolbar-separator" aria-hidden="true" />
+      <ColorPalettePicker
+        value={(editor.getAttributes("textStyle") as { color?: string }).color}
+        label="Text color"
+        previewLabel="A"
+        align="left"
+        recentColors={recentCustomColors}
+        onChange={(color) => editor.chain().focus().setColor(color).run()}
+        onRememberColor={onRememberCustomColor}
+        onClear={() => editor.chain().focus().unsetColor().run()}
+      />
+      <ColorPalettePicker
+        value={(editor.getAttributes("highlight") as { color?: string }).color}
+        label="Highlight color"
+        icon={<Highlighter size={14} />}
+        align="left"
+        recentColors={recentCustomColors}
+        onChange={(color) => editor.chain().focus().setHighlight({ color }).run()}
+        onRememberColor={onRememberCustomColor}
+        onClear={() => editor.chain().focus().unsetHighlight().run()}
+      />
+      <button
+        className="toolbar-button"
+        title="Clear format"
+        aria-label="Clear format"
+        onClick={() => {
+          setFontSize("14");
+          editor.chain().focus().unsetHighlight().unsetColor().unsetFontSize().unsetAllMarks().clearNodes().run();
+        }}
+      >
+        <Eraser size={16} />
+      </button>
+      <button className="toolbar-button" title="Undo" aria-label="Undo" onClick={() => editor.chain().focus().undo().run()}>
+        <Undo2 size={15} />
+      </button>
+      <button className="toolbar-button" title="Redo" aria-label="Redo" onClick={() => editor.chain().focus().redo().run()}>
+        <Redo2 size={15} />
+      </button>
+      <button
+        className="toolbar-button"
+        title="Copy formatting"
+        aria-label="Copy formatting"
+        onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
+      >
+        <Copy size={15} />
+      </button>
+      <button
+        className="toolbar-button"
+        title="Paste formatting"
+        aria-label="Paste formatting"
+        disabled={!copiedFormat}
+        onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
+      >
+        <Paintbrush size={15} />
+      </button>
+    </>
+  );
 
   return (
     <div className={`editor-shell editor-shell-${density}${className ? ` ${className}` : ""}`}>
-      <div className="editor-toolbar">
-        <details className="editor-style-menu">
-          <summary className="toolbar-button editor-style-trigger" title="Text style" aria-label={`Text style: ${blockLabel}`}>
-            {BLOCK_OPTIONS.find((option) => option.value === block)?.icon}
-            <span>{blockLabel}</span>
-            <ChevronDown size={14} />
-          </summary>
-          <div className="editor-style-list">
-            {BLOCK_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                className={option.value === block ? "active" : ""}
-                onClick={() => applyBlock(editor, option.value)}
-                type="button"
-              >
-                <span className="editor-style-check">{option.value === block ? <Check size={15} /> : null}</span>
-                {option.icon}
-                <span>{option.label}</span>
-              </button>
-            ))}
-          </div>
-        </details>
-
-        <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" aria-label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
-          <Bold size={16} />
-        </button>
-        <button className={editor.isActive("italic") ? "toolbar-button active" : "toolbar-button"} title="Italic" aria-label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <Italic size={16} />
-        </button>
-        <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" aria-label="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
-          <UnderlineIcon size={16} />
-        </button>
-        <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" aria-label="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
-          <Strikethrough size={16} />
-        </button>
-        <span className="editor-toolbar-separator" aria-hidden="true" />
-        <ColorPalettePicker
-          value={(editor.getAttributes("textStyle") as { color?: string }).color}
-          label="Text color"
-          previewLabel="A"
-          align="left"
-          recentColors={recentCustomColors}
-          onChange={(color) => editor.chain().focus().setColor(color).run()}
-          onRememberColor={onRememberCustomColor}
-          onClear={() => editor.chain().focus().unsetColor().run()}
-        />
-        <ColorPalettePicker
-          value={(editor.getAttributes("highlight") as { color?: string }).color}
-          label="Highlight color"
-          icon={<Highlighter size={14} />}
-          align="left"
-          recentColors={recentCustomColors}
-          onChange={(color) => editor.chain().focus().setHighlight({ color }).run()}
-          onRememberColor={onRememberCustomColor}
-          onClear={() => editor.chain().focus().unsetHighlight().run()}
-        />
-        <button
-          className="toolbar-button"
-          title="Clear format"
-          aria-label="Clear format"
-          onClick={() => {
-            setFontSize("14");
-            editor.chain().focus().unsetHighlight().unsetColor().unsetFontSize().unsetAllMarks().clearNodes().run();
-          }}
-        >
-          <Eraser size={16} />
-        </button>
-        <button className="toolbar-button" title="Undo" aria-label="Undo" onClick={() => editor.chain().focus().undo().run()}>
-          <Undo2 size={15} />
-        </button>
-        <button className="toolbar-button" title="Redo" aria-label="Redo" onClick={() => editor.chain().focus().redo().run()}>
-          <Redo2 size={15} />
-        </button>
-        <button
-          className="toolbar-button"
-          title="Copy formatting"
-          aria-label="Copy formatting"
-          onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
-        >
-          <Copy size={15} />
-        </button>
-        <button
-          className="toolbar-button"
-          title="Paste formatting"
-          aria-label="Paste formatting"
-          disabled={!copiedFormat}
-          onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
-        >
-          <Paintbrush size={15} />
-        </button>
-      </div>
+      {toolbarMode === "popover" ? (
+        <div className="editor-popover-toolbar-shell">
+          <button
+            type="button"
+            className={`editor-aa-trigger${toolbarOpen ? " active" : ""}`}
+            aria-label="Text formatting"
+            aria-expanded={toolbarOpen}
+            onClick={() => setToolbarOpen((current) => !current)}
+          >
+            Aa
+          </button>
+          {toolbarOpen ? <div className="editor-toolbar editor-toolbar-popover">{toolbarContent}</div> : null}
+        </div>
+      ) : (
+        <div className="editor-toolbar">{toolbarContent}</div>
+      )}
       <EditorContent editor={editor} />
     </div>
   );

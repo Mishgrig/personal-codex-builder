@@ -242,6 +242,16 @@
   z-index: 10001;
 }
 
+.color-picker-panel-portal {
+  position: fixed;
+  right: auto;
+  bottom: auto;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  z-index: 12000;
+}
+
 .color-picker-panel.variant-widget {
   width: 244px;
 }

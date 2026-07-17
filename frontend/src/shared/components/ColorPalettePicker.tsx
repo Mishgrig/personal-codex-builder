@@ -1,5 +1,6 @@
 import { Ban, Pipette, PlusCircle } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type React from "react";
 
 interface ColorPalettePickerProps {
@@ -59,9 +60,12 @@ export function ColorPalettePicker({
   mapDisplayColor,
 }: ColorPalettePickerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
   const [draft, setDraft] = useState(normalizeHex(value) ?? DEFAULT_COLOR);
+  const [panelPosition, setPanelPosition] = useState({ top: 0, left: 0 });
   const currentColor = normalizeHex(value);
   const paletteId = useId();
   const paletteRows = paletteVariant === "widget" ? WIDGET_PALETTE_ROWS : PALETTE_ROWS;
@@ -78,7 +82,8 @@ export function ColorPalettePicker({
       return undefined;
     }
     const handlePointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
         setOpen(false);
         setCustomOpen(false);
       }
@@ -86,6 +91,39 @@ export function ColorPalettePicker({
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) {
+        return;
+      }
+      const rect = trigger.getBoundingClientRect();
+      const panelWidth = panelRef.current?.offsetWidth ?? (customOpen ? 330 : paletteVariant === "widget" ? 244 : 262);
+      const panelHeight = panelRef.current?.offsetHeight ?? 420;
+      const viewportPadding = 12;
+      const preferredLeft = align === "right" ? rect.right - panelWidth : rect.left;
+      const left = Math.min(Math.max(preferredLeft, viewportPadding), window.innerWidth - panelWidth - viewportPadding);
+      const preferredTop = rect.bottom + 8;
+      const top =
+        preferredTop + panelHeight + viewportPadding > window.innerHeight
+          ? Math.max(viewportPadding, rect.top - panelHeight - 8)
+          : preferredTop;
+      setPanelPosition({ top, left });
+    };
+    updatePosition();
+    const frame = window.requestAnimationFrame(updatePosition);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [align, customOpen, open, paletteVariant]);
 
   const selectColor = (color: string, remember = false) => {
     onChange(color);
@@ -97,9 +135,86 @@ export function ColorPalettePicker({
     setCustomOpen(false);
   };
 
+  const panel = open ? (
+    <div
+      ref={panelRef}
+      id={paletteId}
+      className={`color-picker-panel color-picker-panel-portal variant-${paletteVariant} ${customOpen ? "is-custom" : ""}`}
+      role="dialog"
+      aria-label={label}
+      style={{ top: panelPosition.top, left: panelPosition.left }}
+    >
+      {customOpen ? (
+        <CustomColorPanel
+          value={draft}
+          onChange={setDraft}
+          onCancel={() => setCustomOpen(false)}
+          onConfirm={() => selectColor(draft, true)}
+        />
+      ) : (
+        <>
+          {onClear ? (
+            <button
+              type="button"
+              className="color-picker-none"
+              onClick={() => {
+                onClear();
+                setOpen(false);
+              }}
+            >
+              <Ban size={19} />
+              <span>None</span>
+            </button>
+          ) : null}
+          <div className={`color-picker-grid variant-${paletteVariant}`} aria-label="Color palette">
+            {paletteRows.flat().map((color, index) => (
+              <button
+                key={`${color}-${index}`}
+                type="button"
+                className={`color-picker-swatch${currentColor === color ? " active" : ""}`}
+                style={swatchStyle(mapDisplayColor?.(color) ?? color)}
+                aria-label={`${label}: ${color}`}
+                onClick={() => selectColor(color)}
+              />
+            ))}
+          </div>
+          <div className="color-picker-other">
+            <span>Other</span>
+            <div>
+              {normalizedRecentColors.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={`color-picker-swatch recent${currentColor === color ? " active" : ""}`}
+                  style={swatchStyle(mapDisplayColor?.(color) ?? color)}
+                  aria-label={`${label}: ${color}`}
+                  onClick={() => selectColor(color)}
+                />
+              ))}
+              <button type="button" className="color-picker-tool" aria-label="Open custom color" title="Custom color" onClick={() => setCustomOpen(true)}>
+                <PlusCircle size={21} />
+              </button>
+              <button
+                type="button"
+                className="color-picker-tool"
+                aria-label="Pick color from screen"
+                title="Eyedropper"
+                disabled={!canUseEyeDropper()}
+                onClick={() => void pickFromScreen((color) => selectColor(color, true))}
+              >
+                <Pipette size={21} />
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  ) : null;
+
   return (
     <div ref={rootRef} className={`color-picker ${open ? "is-open" : ""} ${align === "left" ? "align-left" : "align-right"}`}>
       <button
+        ref={triggerRef}
         type="button"
         className={`color-picker-trigger ${triggerClassName}`.trim()}
         aria-label={label}
@@ -115,74 +230,7 @@ export function ColorPalettePicker({
         {icon ? <span className="color-picker-trigger-icon">{icon}</span> : null}
         {previewLabel ? <span>{previewLabel}</span> : null}
       </button>
-      {open ? (
-        <div id={paletteId} className={`color-picker-panel variant-${paletteVariant} ${customOpen ? "is-custom" : ""}`} role="dialog" aria-label={label}>
-          {customOpen ? (
-            <CustomColorPanel
-              value={draft}
-              onChange={setDraft}
-              onCancel={() => setCustomOpen(false)}
-              onConfirm={() => selectColor(draft, true)}
-            />
-          ) : (
-            <>
-              {onClear ? (
-                <button
-                  type="button"
-                  className="color-picker-none"
-                  onClick={() => {
-                    onClear();
-                    setOpen(false);
-                  }}
-                >
-                  <Ban size={19} />
-                  <span>None</span>
-                </button>
-              ) : null}
-              <div className={`color-picker-grid variant-${paletteVariant}`} aria-label="Color palette">
-                {paletteRows.flat().map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    className={`color-picker-swatch${currentColor === color ? " active" : ""}`}
-                    style={swatchStyle(mapDisplayColor?.(color) ?? color)}
-                    aria-label={`${label}: ${color}`}
-                    onClick={() => selectColor(color)}
-                  />
-                ))}
-              </div>
-              <div className="color-picker-other">
-                <span>Other</span>
-                <div>
-                  {normalizedRecentColors.map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      className={`color-picker-swatch recent${currentColor === color ? " active" : ""}`}
-                      style={swatchStyle(mapDisplayColor?.(color) ?? color)}
-                      aria-label={`${label}: ${color}`}
-                      onClick={() => selectColor(color)}
-                    />
-                  ))}
-                  <button type="button" className="color-picker-tool" aria-label="Open custom color" title="Custom color" onClick={() => setCustomOpen(true)}>
-                    <PlusCircle size={21} />
-                  </button>
-                  <button
-                    type="button"
-                    className="color-picker-tool"
-                    aria-label="Pick color from screen"
-                    title="Eyedropper"
-                    disabled={!canUseEyeDropper()}
-                    onClick={() => void pickFromScreen((color) => selectColor(color, true))}
-                  >
-                    <Pipette size={21} />
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      ) : null}
+      {panel ? createPortal(panel, document.body) : null}
     </div>
   );
 }

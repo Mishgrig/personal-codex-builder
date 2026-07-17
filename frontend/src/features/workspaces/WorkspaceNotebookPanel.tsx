@@ -472,6 +472,7 @@ function NotebookItemEditor({
       <RichTextEditor
         className="notebook-rich-editor-shell"
         density="compact"
+        toolbarMode="popover"
         value={item.body_json ?? textToDoc(notebookItemToText(item))}
         recentCustomColors={recentCustomColors}
         onRememberCustomColor={onRememberCustomColor}

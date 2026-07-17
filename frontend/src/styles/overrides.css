@@ -764,23 +764,24 @@ select {
 }
 
 .notebook-rich-editor-shell {
-  height: clamp(240px, 52vh, 760px);
-  max-height: min(62vh, 760px);
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-}
-
-.notebook-rich-editor-shell .editor-toolbar {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: visible;
+  height: auto;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
 }
 
 .notebook-rich-editor-shell .rich-body {
-  min-height: 0;
-  height: 100%;
-  max-height: 100%;
+  min-height: 220px;
+  height: auto;
+  max-height: min(54vh, 700px);
   overflow-y: auto;
+}
+
+.notebook-rich-editor-shell .editor-toolbar-popover {
+  left: 8px;
+  right: 8px;
+  width: auto;
+  max-width: none;
 }
 
 .detail-card {
