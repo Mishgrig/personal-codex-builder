@@ -26,6 +26,7 @@ import type {
   WorkspaceNotebookItem,
   WorkspaceNotebookItemType,
 } from "../../types/models";
+import { RichTextEditor } from "../editor/RichTextEditor";
 import { extractPlainText } from "../../utils/richText";
 
 interface WorkspaceNotebookPanelProps {
@@ -38,6 +39,8 @@ interface WorkspaceNotebookPanelProps {
   assets: WorkspaceAsset[];
   currentCardTitle?: string | null;
   onAppendToCurrentCard?: (text: string) => Promise<void>;
+  recentCustomColors?: string[];
+  onRememberCustomColor?: (color: string) => void;
 }
 
 const ITEM_TYPES: Array<{ type: WorkspaceNotebookItemType; label: string }> = [
@@ -69,6 +72,8 @@ export function WorkspaceNotebookPanel({
   onUploadAsset,
   onDeleteAsset,
   assets,
+  recentCustomColors = [],
+  onRememberCustomColor,
 }: WorkspaceNotebookPanelProps) {
   const [draft, setDraft] = useState<WorkspaceNotebook | null>(normalizeNotebook(notebook));
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -122,7 +127,7 @@ export function WorkspaceNotebookPanel({
   }
 
   function createQuickNote() {
-    const item = makeNotebookItem("plain_text", draft?.items.length ?? 0);
+    const item = makeNotebookItem("rich_text", draft?.items.length ?? 0);
     setDraft((current) =>
       normalizeNotebookDraft({
         body_json: current?.body_json ?? emptyDoc(),
@@ -250,6 +255,8 @@ export function WorkspaceNotebookPanel({
                 onUploadAsset={onUploadAsset}
                 onDeleteAsset={(assetId) => removeAssetFromItem(selectedItem.id, assetId)}
                 assets={assets}
+                recentCustomColors={recentCustomColors}
+                onRememberCustomColor={onRememberCustomColor}
               />
             ) : (
               <button className="empty-state compact notebook-empty-action" onClick={createQuickNote}>
@@ -320,6 +327,8 @@ function NotebookItemEditor({
   onUploadAsset,
   onDeleteAsset,
   assets,
+  recentCustomColors,
+  onRememberCustomColor,
 }: {
   item: WorkspaceNotebookItem;
   onChange: (patch: Partial<WorkspaceNotebookItem>) => void;
@@ -327,24 +336,14 @@ function NotebookItemEditor({
   onUploadAsset: (file: File) => Promise<WorkspaceAsset>;
   onDeleteAsset: (assetId: string) => Promise<void>;
   assets: WorkspaceAsset[];
+  recentCustomColors: string[];
+  onRememberCustomColor?: (color: string) => void;
 }) {
   const [uploadState, setUploadState] = useState<"idle" | "uploading" | "uploaded" | "error">("idle");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const itemText = notebookItemToText(item);
   const itemAssetIds = collectNotebookAssetIds(item);
   const assetMap = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const linkedAssets = itemAssetIds.map((assetId) => assetMap.get(assetId) ?? null);
-
-  function updateQuickText(value: string) {
-    onChange({
-      type: "plain_text",
-      title: deriveNotebookTitle(value),
-      text: value,
-      body_text: value,
-      icon: item.icon,
-      asset_ids: item.asset_ids,
-    });
-  }
 
   async function insertAssets(files: File[]) {
     if (!files.length) {
@@ -470,13 +469,30 @@ function NotebookItemEditor({
         </div>
       ) : null}
 
-      <textarea
-        className="themed-textarea notebook-quick-textarea"
-        aria-label={`Text for ${notebookItemTitle(item)}`}
-        rows={10}
-        value={itemText}
-        onChange={(event) => updateQuickText(event.target.value)}
+      <RichTextEditor
+        className="notebook-rich-editor-shell"
+        density="compact"
+        value={item.body_json ?? textToDoc(notebookItemToText(item))}
+        recentCustomColors={recentCustomColors}
+        onRememberCustomColor={onRememberCustomColor}
         placeholder="First line becomes the note title. Drop a scene idea, task, reference note or reminder..."
+        onChange={(bodyJson) =>
+          onChange({
+            type: "rich_text",
+            body_json: bodyJson,
+            icon: item.icon,
+            asset_ids: item.asset_ids,
+          })
+        }
+        onTextChange={(bodyText) =>
+          onChange({
+            type: "rich_text",
+            title: deriveNotebookTitle(bodyText),
+            body_text: bodyText,
+            icon: item.icon,
+            asset_ids: item.asset_ids,
+          })
+        }
       />
 
       {uploadState === "error" || saveState === "error" ? (
@@ -497,12 +513,9 @@ function normalizeNotebook(notebook: WorkspaceNotebook | null): WorkspaceNoteboo
 
 function normalizeNotebookDraft(notebook: WorkspaceNotebook): WorkspaceNotebook {
   const items = notebook.items.map((item, index) => {
-    const normalized = makeNotebookTypePatch((item.type as WorkspaceNotebookItemType) || "rich_text", item);
+    const normalized = normalizeNotebookItem(item, index);
     return {
       ...normalized,
-      ...item,
-      id: item.id || `note-${crypto.randomUUID().slice(0, 8)}`,
-      title: item.title || notebookItemTitle(item),
       sort_order: index,
     };
   });
@@ -523,6 +536,23 @@ function makeNotebookItem(type: WorkspaceNotebookItemType, sortOrder: number): W
     type,
     title: type === "plain_text" ? "Quick note" : itemTypeLabel(type),
     sort_order: sortOrder,
+  };
+}
+
+function normalizeNotebookItem(item: WorkspaceNotebookItem, index: number): WorkspaceNotebookItem {
+  const text = notebookItemToText(item);
+  const bodyJson = item.type === "rich_text" && item.body_json ? item.body_json : textToDoc(text);
+  const bodyText = item.type === "rich_text" ? item.body_text || extractPlainText(bodyJson) : text;
+  const derivedTitle = deriveNotebookTitle(bodyText);
+  return {
+    id: item.id || `note-${crypto.randomUUID().slice(0, 8)}`,
+    type: "rich_text",
+    title: derivedTitle === "Quick note" ? item.title || derivedTitle : derivedTitle,
+    sort_order: index,
+    body_json: bodyJson,
+    body_text: bodyText,
+    asset_ids: Array.from(new Set([...(item.asset_ids ?? []), item.asset_id].filter((assetId): assetId is string => Boolean(assetId)))),
+    icon: item.icon,
   };
 }
 
@@ -559,6 +589,17 @@ function emptyDoc() {
   return {
     type: "doc",
     content: [{ type: "paragraph" }],
+  };
+}
+
+function textToDoc(text: string) {
+  const lines = text.split(/\r?\n/);
+  const content = lines.length
+    ? lines.map((line) => (line ? { type: "paragraph", content: [{ type: "text", text: line }] } : { type: "paragraph" }))
+    : [{ type: "paragraph" }];
+  return {
+    type: "doc",
+    content,
   };
 }
 

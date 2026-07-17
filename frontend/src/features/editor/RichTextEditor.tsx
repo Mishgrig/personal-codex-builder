@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type React from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -7,21 +8,47 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Bold, Copy, Highlighter, Italic, List, ListOrdered, Paintbrush, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import {
+  Bold,
+  Check,
+  ChevronDown,
+  Code2,
+  Copy,
+  Eraser,
+  Heading1,
+  Heading2,
+  Heading3,
+  Highlighter,
+  Italic,
+  List,
+  ListOrdered,
+  Paintbrush,
+  Pilcrow,
+  Quote,
+  Redo2,
+  Strikethrough,
+  Underline as UnderlineIcon,
+  Undo2,
+} from "lucide-react";
 import { ColorPalettePicker } from "../../shared/components/ColorPalettePicker";
+import { extractPlainText } from "../../utils/richText";
 import { FontSize } from "./fontSizeExtension";
 
 interface RichTextEditorProps {
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
+  onTextChange?: (value: string) => void;
   recentCustomColors?: string[];
   onRememberCustomColor?: (color: string) => void;
+  placeholder?: string;
+  className?: string;
+  density?: "default" | "compact";
 }
 
 const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
 
 interface FormatSnapshot {
-  block: "body" | "h1" | "h2" | "h3" | "bullet" | "ordered";
+  block: "body" | "h1" | "h2" | "h3" | "mono" | "bullet" | "ordered" | "quote";
   bold: boolean;
   italic: boolean;
   underline: boolean;
@@ -31,7 +58,27 @@ interface FormatSnapshot {
   fontSize: string;
 }
 
-export function RichTextEditor({ value, onChange, recentCustomColors = [], onRememberCustomColor }: RichTextEditorProps) {
+const BLOCK_OPTIONS: Array<{ value: FormatSnapshot["block"]; label: string; icon: React.ReactNode }> = [
+  { value: "h1", label: "Title", icon: <Heading1 size={16} /> },
+  { value: "h2", label: "Heading", icon: <Heading2 size={16} /> },
+  { value: "h3", label: "Subheading", icon: <Heading3 size={16} /> },
+  { value: "body", label: "Body text", icon: <Pilcrow size={16} /> },
+  { value: "mono", label: "Monospace", icon: <Code2 size={16} /> },
+  { value: "bullet", label: "Bulleted list", icon: <List size={16} /> },
+  { value: "ordered", label: "Numbered list", icon: <ListOrdered size={16} /> },
+  { value: "quote", label: "Block quote", icon: <Quote size={16} /> },
+];
+
+export function RichTextEditor({
+  value,
+  onChange,
+  onTextChange,
+  recentCustomColors = [],
+  onRememberCustomColor,
+  placeholder = "Write the living text of this card...",
+  className = "",
+  density = "default",
+}: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
   const [copiedFormat, setCopiedFormat] = useState<FormatSnapshot | null>(null);
   const editor = useEditor({
@@ -53,7 +100,7 @@ export function RichTextEditor({ value, onChange, recentCustomColors = [], onRem
         openOnClick: false,
       }),
       Placeholder.configure({
-        placeholder: "Write the living text of this card...",
+        placeholder,
       }),
       FontSize,
     ],
@@ -64,7 +111,9 @@ export function RichTextEditor({ value, onChange, recentCustomColors = [], onRem
       },
     },
     onUpdate: ({ editor: current }) => {
-      onChange(current.getJSON() as Record<string, unknown>);
+      const nextJson = current.getJSON() as Record<string, unknown>;
+      onChange(nextJson);
+      onTextChange?.(extractPlainText(nextJson));
       window.setTimeout(() => decorateCollapsibleHeadings(current.view.dom), 0);
     },
   });
@@ -84,67 +133,47 @@ export function RichTextEditor({ value, onChange, recentCustomColors = [], onRem
   if (!editor) {
     return <div className="editor-shell loading">Preparing editor…</div>;
   }
+  const block = currentBlock(editor);
+  const blockLabel = BLOCK_OPTIONS.find((option) => option.value === block)?.label ?? "Body text";
 
   return (
-    <div className="editor-shell">
+    <div className={`editor-shell editor-shell-${density}${className ? ` ${className}` : ""}`}>
       <div className="editor-toolbar">
-        <select
-          className="toolbar-select"
-          value={currentBlock(editor)}
-          onChange={(event) => {
-            const next = event.target.value;
-            applyBlock(editor, next as FormatSnapshot["block"]);
-          }}
-        >
-          <option value="h1">Title (H1)</option>
-          <option value="h2">Heading (H2)</option>
-          <option value="h3">Subheading (H3)</option>
-          <option value="body">Body text</option>
-          <option value="bullet">Bulleted list</option>
-          <option value="ordered">Numbered list</option>
-        </select>
-
-        <div className="font-size-group">
-          <button className="icon-button" title="Smaller text" onClick={() => applyFont(editor, fontSize, setFontSize, -1)}>
-            -
-          </button>
-          <select
-            className="toolbar-select compact"
-            value={fontSize}
-            onChange={(event) => {
-              setFontSize(event.target.value);
-              editor.chain().focus().setFontSize(`${event.target.value}px`).run();
-            }}
-          >
-            {FONT_STEPS.map((step) => (
-              <option key={step} value={step}>
-                {step}
-              </option>
+        <details className="editor-style-menu">
+          <summary className="toolbar-button editor-style-trigger" title="Text style" aria-label={`Text style: ${blockLabel}`}>
+            {BLOCK_OPTIONS.find((option) => option.value === block)?.icon}
+            <span>{blockLabel}</span>
+            <ChevronDown size={14} />
+          </summary>
+          <div className="editor-style-list">
+            {BLOCK_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                className={option.value === block ? "active" : ""}
+                onClick={() => applyBlock(editor, option.value)}
+                type="button"
+              >
+                <span className="editor-style-check">{option.value === block ? <Check size={15} /> : null}</span>
+                {option.icon}
+                <span>{option.label}</span>
+              </button>
             ))}
-          </select>
-          <button className="icon-button" title="Larger text" onClick={() => applyFont(editor, fontSize, setFontSize, 1)}>
-            +
-          </button>
-        </div>
+          </div>
+        </details>
 
-        <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
-          <Bold size={15} />
+        <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" aria-label="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
+          <Bold size={16} />
         </button>
-        <button className={editor.isActive("italic") ? "toolbar-button active" : "toolbar-button"} title="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
-          <Italic size={15} />
+        <button className={editor.isActive("italic") ? "toolbar-button active" : "toolbar-button"} title="Italic" aria-label="Italic" onClick={() => editor.chain().focus().toggleItalic().run()}>
+          <Italic size={16} />
         </button>
-        <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
-          <UnderlineIcon size={15} />
+        <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" aria-label="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
+          <UnderlineIcon size={16} />
         </button>
-        <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
-          <Strikethrough size={15} />
+        <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" aria-label="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
+          <Strikethrough size={16} />
         </button>
-        <button className={editor.isActive("bulletList") ? "toolbar-button active" : "toolbar-button"} title="Bulleted list" onClick={() => editor.chain().focus().toggleBulletList().run()}>
-          <List size={15} />
-        </button>
-        <button className={editor.isActive("orderedList") ? "toolbar-button active" : "toolbar-button"} title="Numbered list" onClick={() => editor.chain().focus().toggleOrderedList().run()}>
-          <ListOrdered size={15} />
-        </button>
+        <span className="editor-toolbar-separator" aria-hidden="true" />
         <ColorPalettePicker
           value={(editor.getAttributes("textStyle") as { color?: string }).color}
           label="Text color"
@@ -168,22 +197,24 @@ export function RichTextEditor({ value, onChange, recentCustomColors = [], onRem
         <button
           className="toolbar-button"
           title="Clear format"
+          aria-label="Clear format"
           onClick={() => {
             setFontSize("14");
-            editor.chain().focus().unsetHighlight().unsetColor().unsetFontSize().unsetAllMarks().run();
+            editor.chain().focus().unsetHighlight().unsetColor().unsetFontSize().unsetAllMarks().clearNodes().run();
           }}
         >
-          Clear format
+          <Eraser size={16} />
         </button>
-        <button className="toolbar-button" title="Undo" onClick={() => editor.chain().focus().undo().run()}>
+        <button className="toolbar-button" title="Undo" aria-label="Undo" onClick={() => editor.chain().focus().undo().run()}>
           <Undo2 size={15} />
         </button>
-        <button className="toolbar-button" title="Redo" onClick={() => editor.chain().focus().redo().run()}>
+        <button className="toolbar-button" title="Redo" aria-label="Redo" onClick={() => editor.chain().focus().redo().run()}>
           <Redo2 size={15} />
         </button>
         <button
           className="toolbar-button"
           title="Copy formatting"
+          aria-label="Copy formatting"
           onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
         >
           <Copy size={15} />
@@ -191,6 +222,7 @@ export function RichTextEditor({ value, onChange, recentCustomColors = [], onRem
         <button
           className="toolbar-button"
           title="Paste formatting"
+          aria-label="Paste formatting"
           disabled={!copiedFormat}
           onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
         >
@@ -212,8 +244,10 @@ function currentBlock(editor: NonNullable<ReturnType<typeof useEditor>>): Format
   if (editor.isActive("heading", { level: 1 })) return "h1";
   if (editor.isActive("heading", { level: 2 })) return "h2";
   if (editor.isActive("heading", { level: 3 })) return "h3";
+  if (editor.isActive("codeBlock")) return "mono";
   if (editor.isActive("bulletList")) return "bullet";
   if (editor.isActive("orderedList")) return "ordered";
+  if (editor.isActive("blockquote")) return "quote";
   return "body";
 }
 
@@ -228,6 +262,14 @@ function applyBlock(editor: NonNullable<ReturnType<typeof useEditor>>, block: Fo
   }
   if (block === "ordered") {
     editor.chain().focus().toggleOrderedList().run();
+    return;
+  }
+  if (block === "mono") {
+    editor.chain().focus().toggleCodeBlock().run();
+    return;
+  }
+  if (block === "quote") {
+    editor.chain().focus().toggleBlockquote().run();
     return;
   }
   editor.chain().focus().toggleHeading({ level: Number(block.replace("h", "")) as 1 | 2 | 3 }).run();

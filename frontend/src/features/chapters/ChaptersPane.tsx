@@ -1,5 +1,29 @@
-import { useEffect, useState } from "react";
-import { BookOpen, Dice5, Eye, EyeOff, Image, Link2, Map, NotebookPen, Play, Plus, Users } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type React from "react";
+import { DndContext, PointerSensor, closestCenter, type DragEndEvent, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  BookOpen,
+  Check,
+  Dice5,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Image,
+  Info,
+  Layers3,
+  Link2,
+  Map as MapIcon,
+  NotebookPen,
+  Play,
+  ScrollText,
+  Settings2,
+  SlidersHorizontal,
+  Users,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type {
   Board,
   CardListItem,
@@ -18,6 +42,8 @@ import type {
   WorkspaceAsset,
   WorkspaceSummary,
 } from "../../types/models";
+import { ColorPalettePicker } from "../../shared/components/ColorPalettePicker";
+import { IconButton } from "../../shared/components/IconButton";
 
 interface ChaptersPaneProps {
   workspace: WorkspaceSummary;
@@ -43,6 +69,7 @@ interface ChaptersPaneProps {
   onUpdateDiceShortcut: (shortcutId: number, payload: DiceShortcutUpdatePayload) => Promise<Chapter>;
   onDeleteDiceShortcut: (shortcutId: number) => Promise<Chapter>;
   onOpenCard: (cardId: number) => void;
+  onUpdatePreferences: (patch: Record<string, unknown>) => void;
 }
 
 interface DiceRoll {
@@ -51,6 +78,59 @@ interface DiceRoll {
   total: number;
   detail: string;
 }
+
+type ChaptersWidgetId = "shelf" | "chapter_prep" | "linked_materials" | "scenes" | "scene_materials";
+type ChaptersWidgetSize = "compact" | "normal" | "wide";
+type ChaptersWidgetTint = "system" | `#${string}`;
+type ChaptersWidgetTintMap = Record<string, ChaptersWidgetTint>;
+type ChaptersWidgetIconMap = Record<string, ChaptersWidgetIconId>;
+
+interface ChaptersWidgetLayout {
+  id: ChaptersWidgetId;
+  enabled: boolean;
+  order: number;
+  size: ChaptersWidgetSize;
+  title?: string;
+}
+
+const DEFAULT_CHAPTERS_WIDGET_LAYOUT: ChaptersWidgetLayout[] = [
+  { id: "shelf", enabled: true, order: 10, size: "compact" },
+  { id: "chapter_prep", enabled: true, order: 20, size: "wide" },
+  { id: "linked_materials", enabled: true, order: 30, size: "compact" },
+  { id: "scenes", enabled: true, order: 40, size: "wide" },
+  { id: "scene_materials", enabled: true, order: 50, size: "compact" },
+];
+
+const CHAPTERS_WIDGET_INFO: Record<ChaptersWidgetId, string> = {
+  shelf: "Create, select, and organize chapters in this world.",
+  chapter_prep: "Edit the selected chapter's title, status, description, and prep notes.",
+  linked_materials: "Attach world materials and references to the selected chapter.",
+  scenes: "Create, select, and prepare scenes inside the selected chapter.",
+  scene_materials: "Attach scene references, tokens, and player/GM-visible materials.",
+};
+
+const CHAPTERS_WIDGET_ICON_OPTIONS = [
+  { id: "book", label: "Book", Icon: BookOpen },
+  { id: "scroll", label: "Scroll", Icon: ScrollText },
+  { id: "layers", label: "Layers", Icon: Layers3 },
+  { id: "link", label: "Link", Icon: Link2 },
+  { id: "map", label: "Map", Icon: MapIcon },
+  { id: "note", label: "Notebook", Icon: NotebookPen },
+  { id: "settings", label: "Settings", Icon: Settings2 },
+  { id: "users", label: "Users", Icon: Users },
+] as const satisfies ReadonlyArray<{ id: string; label: string; Icon: LucideIcon }>;
+
+type ChaptersWidgetIconId = (typeof CHAPTERS_WIDGET_ICON_OPTIONS)[number]["id"];
+
+const CHAPTERS_WIDGET_ICON_IDS = new Set<string>(CHAPTERS_WIDGET_ICON_OPTIONS.map((option) => option.id));
+
+const DEFAULT_CHAPTERS_WIDGET_ICONS: Record<ChaptersWidgetId, ChaptersWidgetIconId> = {
+  shelf: "book",
+  chapter_prep: "scroll",
+  linked_materials: "link",
+  scenes: "layers",
+  scene_materials: "map",
+};
 
 export function ChaptersPane({
   workspace,
@@ -76,6 +156,7 @@ export function ChaptersPane({
   onUpdateDiceShortcut,
   onDeleteDiceShortcut,
   onOpenCard,
+  onUpdatePreferences,
 }: ChaptersPaneProps) {
   const [selectedChapterId, setSelectedChapterId] = useNumericSelection(chapters[0]?.id ?? null, chapters.map((chapter) => chapter.id));
   const selectedChapter = chapters.find((chapter) => chapter.id === selectedChapterId) ?? chapters[0] ?? null;
@@ -96,7 +177,13 @@ export function ChaptersPane({
   const [diceFormula, setDiceFormula] = useState("d20");
   const [quickNote, setQuickNote] = useState("");
   const [playView, setPlayView] = useState<"gm" | "players">("gm");
+  const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false);
   const [diceLog, setDiceLog] = useState<DiceRoll[]>([]);
+  const widgetLayout = normalizeChaptersWidgetLayout(workspace.ui_preferences.chapters_widget_layout);
+  const widgetTints = normalizeChaptersWidgetTints(workspace.ui_preferences.chapters_widget_tints);
+  const widgetIcons = normalizeChaptersWidgetIcons(workspace.ui_preferences.chapters_widget_icons);
+  const enabledWidgets = widgetLayout.filter((widget) => widget.enabled).sort((left, right) => left.order - right.order);
+  const widgetSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const materialOptions = buildReferenceOptions(targetType, cards, assets, boards, events);
   const visibleSceneReferences = selectedScene?.references.filter((reference) => playView === "gm" || reference.visibility === "players") ?? [];
   const visibleTokens = selectedScene?.tokens.filter((token) => playView === "gm" || token.visibility === "players") ?? [];
@@ -180,34 +267,57 @@ export function ChaptersPane({
     setDiceLog((current) => [{ id: `roll-${crypto.randomUUID().slice(0, 8)}`, formula, ...result }, ...current].slice(0, 12));
   }
 
-  return (
-    <section className="campaign-workspace chapters-workspace">
-      <div className="campaign-hero">
-        <div>
-          <span className="eyebrow">World / Chapters</span>
-          <h1>{workspace.name}</h1>
-          <p>Prep playable chapters from canonical entities, then run each scene locally with a GM screen and player preview.</p>
-        </div>
-        <div className="segmented-control">
-          <button className="active">
-            <BookOpen size={14} />
-            Prep
-          </button>
-          <button disabled title="Open a scene below to use Play mode">
-            <Play size={14} />
-            Play
-          </button>
-        </div>
-      </div>
+  function updateWidgetLayout(nextLayout: ChaptersWidgetLayout[]) {
+    onUpdatePreferences({ chapters_widget_layout: nextLayout });
+  }
 
-      <div className="campaign-grid">
-        <article className="content-card">
+  function patchWidget(widgetId: ChaptersWidgetId, patch: Partial<ChaptersWidgetLayout>) {
+    updateWidgetLayout(widgetLayout.map((widget) => (widget.id === widgetId ? { ...widget, ...patch } : widget)));
+  }
+
+  function reorderWidgets(event: DragEndEvent) {
+    const activeId = String(event.active.id) as ChaptersWidgetId;
+    const overId = event.over ? (String(event.over.id) as ChaptersWidgetId) : "";
+    if (!overId || activeId === overId) {
+      return;
+    }
+    const sorted = [...widgetLayout].sort((left, right) => left.order - right.order);
+    const oldIndex = sorted.findIndex((widget) => widget.id === activeId);
+    const newIndex = sorted.findIndex((widget) => widget.id === overId);
+    if (oldIndex < 0 || newIndex < 0) {
+      return;
+    }
+    updateWidgetLayout(arrayMove(sorted, oldIndex, newIndex).map((widget, order) => ({ ...widget, order: (order + 1) * 10 })));
+  }
+
+  function patchWidgetTint(widgetId: ChaptersWidgetId, tint: ChaptersWidgetTint) {
+    onUpdatePreferences({ chapters_widget_tints: { ...widgetTints, [widgetId]: tint } });
+  }
+
+  function patchWidgetIcon(widgetId: ChaptersWidgetId, iconId: ChaptersWidgetIconId) {
+    onUpdatePreferences({ chapters_widget_icons: { ...widgetIcons, [widgetId]: iconId } });
+  }
+
+  function widgetTint(widgetId: ChaptersWidgetId) {
+    return widgetTints[widgetId] ?? "system";
+  }
+
+  function widgetIconId(widgetId: ChaptersWidgetId) {
+    return widgetIcons[widgetId] ?? DEFAULT_CHAPTERS_WIDGET_ICONS[widgetId];
+  }
+
+  function renderChaptersWidget(widget: ChaptersWidgetLayout) {
+    const title = chaptersWidgetLabel(widget);
+    const icon = <ChaptersWidgetIcon iconId={widgetIconId(widget.id)} size={18} />;
+    if (widget.id === "shelf") {
+      return (
+        <ChapterWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={title}>
           <div className="section-heading">
             <div>
               <span className="eyebrow">Shelf</span>
-              <h2>Chapters</h2>
+              <h2>{title}</h2>
             </div>
-            <Plus size={18} />
+            <span className="chapter-widget-heading-icon">{icon}</span>
           </div>
           <div className="dashboard-inline-form">
             <input className="themed-input" value={newChapterTitle} placeholder="New chapter..." onChange={(event) => setNewChapterTitle(event.target.value)} />
@@ -222,15 +332,21 @@ export function ChaptersPane({
             ))}
             {!chapters.length ? <p className="helper-text">Create the first Chapter to gather entities, scenes, maps, boards and dice shortcuts.</p> : null}
           </div>
-        </article>
-
-        <article className="content-card campaign-span-2">
+        </ChapterWidget>
+      );
+    }
+    if (widget.id === "chapter_prep") {
+      return (
+        <ChapterWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={title}>
           <div className="section-heading">
             <div>
               <span className="eyebrow">Chapter Prep</span>
               <h2>{selectedChapter?.title ?? "No chapter selected"}</h2>
             </div>
-            {selectedChapter ? <button className="secondary-button danger small" onClick={() => void onDeleteChapter(selectedChapter.id)}>Delete</button> : null}
+            <div className="chapter-widget-heading-actions">
+              <span className="chapter-widget-heading-icon">{icon}</span>
+              {selectedChapter ? <button className="secondary-button danger small" onClick={() => void onDeleteChapter(selectedChapter.id)}>Delete</button> : null}
+            </div>
           </div>
           {selectedChapter ? (
             <div className="form-grid two">
@@ -281,15 +397,18 @@ export function ChaptersPane({
           ) : (
             <p className="helper-text">No chapter selected.</p>
           )}
-        </article>
-
-        <article className="content-card">
+        </ChapterWidget>
+      );
+    }
+    if (widget.id === "linked_materials") {
+      return (
+        <ChapterWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={title}>
           <div className="section-heading">
             <div>
               <span className="eyebrow">Linked Materials</span>
-              <h2>Chapter references</h2>
+              <h2>{title}</h2>
             </div>
-            <Link2 size={18} />
+            <span className="chapter-widget-heading-icon">{icon}</span>
           </div>
           <ReferencePicker
             targetType={targetType}
@@ -304,17 +423,23 @@ export function ChaptersPane({
             onAdd={() => void addReference("chapter")}
           />
           <ReferenceList references={selectedChapter?.references ?? []} onDelete={(id) => void onDeleteChapterReference(id)} />
-        </article>
-
-        <article className="content-card campaign-span-2">
+        </ChapterWidget>
+      );
+    }
+    if (widget.id === "scenes") {
+      return (
+        <ChapterWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={title}>
           <div className="section-heading">
             <div>
               <span className="eyebrow">Scenes</span>
-              <h2>Scene prep</h2>
+              <h2>{title}</h2>
             </div>
-            <div className="dashboard-inline-form">
-              <input className="themed-input" value={newSceneTitle} placeholder="New scene..." onChange={(event) => setNewSceneTitle(event.target.value)} />
-              <button className="primary-button small" disabled={!selectedChapter} onClick={() => void createScene()}>Add scene</button>
+            <div className="chapter-widget-heading-actions">
+              <span className="chapter-widget-heading-icon">{icon}</span>
+              <div className="dashboard-inline-form">
+                <input className="themed-input" value={newSceneTitle} placeholder="New scene..." onChange={(event) => setNewSceneTitle(event.target.value)} />
+                <button className="primary-button small" disabled={!selectedChapter} onClick={() => void createScene()}>Add scene</button>
+              </div>
             </div>
           </div>
           <div className="chapter-scene-layout">
@@ -327,66 +452,146 @@ export function ChaptersPane({
               ))}
               {selectedChapter && !selectedChapter.scenes.length ? <p className="helper-text">Add scenes that can be opened in Play mode.</p> : null}
             </div>
-            <SceneEditor
-              scene={selectedScene}
-              assets={assets}
-              onUpdateScene={onUpdateScene}
-              onDeleteScene={onDeleteScene}
-            />
+            <SceneEditor scene={selectedScene} assets={assets} onUpdateScene={onUpdateScene} onDeleteScene={onDeleteScene} />
           </div>
-        </article>
-
-        <article className="content-card">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">Scene Materials</span>
-              <h2>Refs and tokens</h2>
-            </div>
-            <Map size={18} />
+        </ChapterWidget>
+      );
+    }
+    return (
+      <ChapterWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={title}>
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Scene Materials</span>
+            <h2>{title}</h2>
           </div>
-          <ReferencePicker
-            targetType={targetType}
-            targetId={targetId}
-            role={referenceRole}
-            visibility={referenceVisibility}
-            options={materialOptions}
-            onTargetTypeChange={setTargetType}
-            onTargetIdChange={setTargetId}
-            onRoleChange={setReferenceRole}
-            onVisibilityChange={setReferenceVisibility}
-            onAdd={() => void addReference("scene")}
-            showVisibility
-          />
-          <ReferenceList references={selectedScene?.references ?? []} onDelete={(id) => void onDeleteSceneReference(id)} />
-          <div className="form-grid two">
-            <select className="themed-select" value={tokenCardId} onChange={(event) => setTokenCardId(event.target.value)}>
-              <option value="">Token entity...</option>
-              {characterCards.map((card) => <option key={card.id} value={card.id}>{card.title}</option>)}
-            </select>
-            <select className="themed-select" value={tokenAssetId} onChange={(event) => setTokenAssetId(event.target.value)}>
-              <option value="">Token asset...</option>
-              {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.original_filename}</option>)}
-            </select>
-            <button className="secondary-button small campaign-span-2" disabled={!selectedScene} onClick={() => void addSceneToken()}>
-              <Users size={14} />
-              Add token
-            </button>
-          </div>
-          <div className="reference-list">
-            {selectedScene?.tokens.map((token) => (
-              <div className="reference-card" key={token.id}>
-                <strong>{token.label || token.card_title || token.asset_filename || "Token"}</strong>
-                <span>{token.visibility} · x {Math.round(token.x)} / y {Math.round(token.y)}</span>
-                <div className="dice-presets">
-                  <button className="secondary-button small" onClick={() => void onUpdateSceneToken(token.id, { visibility: token.visibility === "players" ? "gm" : "players" })}>
-                    {token.visibility === "players" ? "GM only" : "Players"}
-                  </button>
-                  <button className="secondary-button danger small" onClick={() => void onDeleteSceneToken(token.id)}>Remove</button>
-                </div>
+          <span className="chapter-widget-heading-icon">{icon}</span>
+        </div>
+        <ReferencePicker
+          targetType={targetType}
+          targetId={targetId}
+          role={referenceRole}
+          visibility={referenceVisibility}
+          options={materialOptions}
+          onTargetTypeChange={setTargetType}
+          onTargetIdChange={setTargetId}
+          onRoleChange={setReferenceRole}
+          onVisibilityChange={setReferenceVisibility}
+          onAdd={() => void addReference("scene")}
+          showVisibility
+        />
+        <ReferenceList references={selectedScene?.references ?? []} onDelete={(id) => void onDeleteSceneReference(id)} />
+        <div className="form-grid two">
+          <select className="themed-select" value={tokenCardId} onChange={(event) => setTokenCardId(event.target.value)}>
+            <option value="">Token entity...</option>
+            {characterCards.map((card) => <option key={card.id} value={card.id}>{card.title}</option>)}
+          </select>
+          <select className="themed-select" value={tokenAssetId} onChange={(event) => setTokenAssetId(event.target.value)}>
+            <option value="">Token asset...</option>
+            {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.original_filename}</option>)}
+          </select>
+          <button className="secondary-button small campaign-span-2" disabled={!selectedScene} onClick={() => void addSceneToken()}>
+            <Users size={14} />
+            Add token
+          </button>
+        </div>
+        <div className="reference-list">
+          {selectedScene?.tokens.map((token) => (
+            <div className="reference-card" key={token.id}>
+              <strong>{token.label || token.card_title || token.asset_filename || "Token"}</strong>
+              <span>{token.visibility} · x {Math.round(token.x)} / y {Math.round(token.y)}</span>
+              <div className="dice-presets">
+                <button className="secondary-button small" onClick={() => void onUpdateSceneToken(token.id, { visibility: token.visibility === "players" ? "gm" : "players" })}>
+                  {token.visibility === "players" ? "GM only" : "Players"}
+                </button>
+                <button className="secondary-button danger small" onClick={() => void onDeleteSceneToken(token.id)}>Remove</button>
               </div>
+            </div>
+          ))}
+        </div>
+      </ChapterWidget>
+    );
+  }
+
+  const widgetSettingsPanel = (
+    <>
+      <div className="workspace-manager-header">
+        <div>
+          <h2 className="dashboard-widget-title">
+            <span>Chapters widgets</span>
+            <span className="dashboard-widget-title-icon"><SlidersHorizontal size={18} /></span>
+          </h2>
+          <p>Enable, resize and reorder the Chapters widgets. These preferences stay in this local world.</p>
+        </div>
+        <IconButton title="Close widget settings" aria-label="Close widget settings" onClick={() => setWidgetSettingsOpen(false)}>
+          <X size={16} />
+        </IconButton>
+      </div>
+      <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={reorderWidgets}>
+        <SortableContext items={[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
+          <div className="dashboard-widget-settings-list">
+            {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
+              <SortableChaptersWidgetSettingRow key={widget.id} widget={widget}>
+                <div className="widget-setting-title">
+                  <label className="tiny-toggle widget-enabled-toggle" aria-label={`Show ${chaptersWidgetLabel(widget)}`}>
+                    <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
+                  </label>
+                  <EditableChaptersWidgetTitle
+                    value={widget.title ?? ""}
+                    placeholder={chaptersWidgetLabel(widget.id)}
+                    ariaLabel={`Widget title: ${chaptersWidgetLabel(widget)}`}
+                    onCommit={(title) => patchWidget(widget.id, { title })}
+                  />
+                  <ChaptersWidgetInfo label={chaptersWidgetLabel(widget.id)} description={CHAPTERS_WIDGET_INFO[widget.id]} />
+                </div>
+                <ChaptersWidgetSizePicker value={widget.size} onChange={(size) => patchWidget(widget.id, { size })} />
+                <ColorPalettePicker
+                  value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
+                  label={`Widget color: ${chaptersWidgetLabel(widget)}`}
+                  paletteVariant="widget"
+                  align="right"
+                  triggerClassName="widget-tint-trigger"
+                  onChange={(color) => patchWidgetTint(widget.id, color as ChaptersWidgetTint)}
+                  onClear={() => patchWidgetTint(widget.id, "system")}
+                  displayColor={chapterWidgetDisplayColor(widgetTint(widget.id))}
+                  mapDisplayColor={chapterWidgetDisplayColor}
+                />
+                <ChaptersWidgetIconPicker value={widgetIconId(widget.id)} onChange={(iconId) => patchWidgetIcon(widget.id, iconId)} />
+              </SortableChaptersWidgetSettingRow>
             ))}
           </div>
-        </article>
+        </SortableContext>
+      </DndContext>
+    </>
+  );
+
+  return (
+    <section className="campaign-workspace chapters-workspace">
+      <div className="campaign-hero">
+        <div>
+          <span className="eyebrow">World / Chapters</span>
+          <h1>{workspace.name}</h1>
+          <p>Prep playable chapters from canonical entities, then run each scene locally with a GM screen and player preview.</p>
+        </div>
+        <div className="chapters-hero-actions">
+          <button className="secondary-button" onClick={() => setWidgetSettingsOpen(true)} aria-expanded={widgetSettingsOpen} aria-controls="chapters-widget-settings">
+            <SlidersHorizontal size={14} />
+            Customize widgets
+          </button>
+          <div className="segmented-control">
+            <button className="active">
+              <BookOpen size={14} />
+              Prep
+            </button>
+            <button disabled title="Open a scene below to use Play mode">
+              <Play size={14} />
+              Play
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="campaign-grid chapters-widget-grid">
+        {enabledWidgets.map(renderChaptersWidget)}
 
         <article className="content-card campaign-span-2">
           <div className="section-heading">
@@ -484,8 +689,303 @@ export function ChaptersPane({
           </div>
         </article>
       </div>
+      {widgetSettingsOpen ? (
+        <div className="modal-backdrop" onClick={() => setWidgetSettingsOpen(false)}>
+          <section
+            id="chapters-widget-settings"
+            className="modal-card workspace-manager-modal dashboard-settings-modal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {widgetSettingsPanel}
+          </section>
+        </div>
+      ) : null}
     </section>
   );
+}
+
+function ChapterWidget({
+  widget,
+  tint,
+  title,
+  children,
+}: {
+  widget: ChaptersWidgetLayout;
+  tint: ChaptersWidgetTint;
+  title: string;
+  children: React.ReactNode;
+}) {
+  const customTint = tint !== "system" ? tint : "";
+  return (
+    <article
+      className={`content-card chapter-widget chapter-widget-${widget.id} ${widget.size} ${customTint ? "tint-custom" : "tint-system"}`}
+      aria-label={`${title} widget`}
+      style={customTint ? ({ "--chapter-widget-tint": customTint } as React.CSSProperties) : undefined}
+    >
+      {children}
+    </article>
+  );
+}
+
+function EditableChaptersWidgetTitle({
+  value,
+  placeholder,
+  ariaLabel,
+  onCommit,
+}: {
+  value: string;
+  placeholder: string;
+  ariaLabel: string;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const lastCommitted = useRef(value);
+
+  useEffect(() => {
+    setDraft(value);
+    lastCommitted.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      commitChaptersWidgetTitle(draft, lastCommitted, onCommit);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [draft, onCommit]);
+
+  return (
+    <input
+      className="widget-title-input"
+      aria-label={ariaLabel}
+      value={draft}
+      placeholder={placeholder}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => commitChaptersWidgetTitle(draft, lastCommitted, onCommit)}
+    />
+  );
+}
+
+function commitChaptersWidgetTitle(
+  draft: string,
+  lastCommitted: React.MutableRefObject<string>,
+  onCommit: (value: string) => void,
+) {
+  const next = draft.trim();
+  if (next === lastCommitted.current) {
+    return;
+  }
+  lastCommitted.current = next;
+  onCommit(next);
+}
+
+function ChaptersWidgetIcon({ iconId, size = 18 }: { iconId: ChaptersWidgetIconId; size?: number }) {
+  const option = CHAPTERS_WIDGET_ICON_OPTIONS.find((item) => item.id === iconId) ?? CHAPTERS_WIDGET_ICON_OPTIONS[0];
+  const Icon = option.Icon;
+  return <Icon size={size} />;
+}
+
+function ChaptersWidgetIconPicker({ value, onChange }: { value: ChaptersWidgetIconId; onChange: (value: ChaptersWidgetIconId) => void }) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const current = CHAPTERS_WIDGET_ICON_OPTIONS.find((option) => option.id === value) ?? CHAPTERS_WIDGET_ICON_OPTIONS[0];
+  return (
+    <details ref={detailsRef} className="widget-icon-picker">
+      <summary className="widget-icon-trigger" aria-label={`Widget icon: ${current.label}`} title={`Widget icon: ${current.label}`}>
+        <ChaptersWidgetIcon iconId={current.id} size={16} />
+      </summary>
+      <div className="widget-icon-menu" role="menu" aria-label="Widget icons">
+        {CHAPTERS_WIDGET_ICON_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={option.id === value ? "active" : ""}
+            aria-label={`Use ${option.label} icon`}
+            title={option.label}
+            onClick={() => {
+              onChange(option.id);
+              if (detailsRef.current) {
+                detailsRef.current.open = false;
+              }
+            }}
+          >
+            <ChaptersWidgetIcon iconId={option.id} size={16} />
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ChaptersWidgetInfo({ label, description }: { label: string; description: string }) {
+  return (
+    <span className="widget-info">
+      <button type="button" className="widget-info-button" aria-label={`${label} widget info`}>
+        <Info size={14} />
+      </button>
+      <span className="widget-info-popover" role="tooltip">
+        {description}
+      </span>
+    </span>
+  );
+}
+
+function ChaptersWidgetSizePicker({ value, onChange }: { value: ChaptersWidgetSize; onChange: (value: ChaptersWidgetSize) => void }) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const options: ChaptersWidgetSize[] = ["compact", "normal", "wide"];
+  const labels: Record<ChaptersWidgetSize, string> = {
+    compact: "Square widget",
+    normal: "Double-width widget",
+    wide: "Full-width widget",
+  };
+  return (
+    <details ref={detailsRef} className="widget-size-picker">
+      <summary className="widget-size-trigger" aria-label={labels[value]} title={labels[value]}>
+        <ChaptersWidgetSizeIcon size={value} />
+      </summary>
+      <div className="widget-size-menu">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={option === value ? "active" : ""}
+            aria-label={`Set ${labels[option].toLowerCase()}`}
+            title={labels[option]}
+            onClick={() => {
+              onChange(option);
+              if (detailsRef.current) {
+                detailsRef.current.open = false;
+              }
+            }}
+          >
+            <ChaptersWidgetSizeIcon size={option} />
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function ChaptersWidgetSizeIcon({ size }: { size: ChaptersWidgetSize }) {
+  return (
+    <span className={`widget-size-icon ${size}`} aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
+function SortableChaptersWidgetSettingRow({
+  widget,
+  children,
+}: {
+  widget: ChaptersWidgetLayout;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: widget.id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`dashboard-widget-setting-row${isDragging ? " dragging" : ""}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+      }}
+    >
+      <button className="mini-icon-button drag-handle" title={`Reorder ${chaptersWidgetLabel(widget)}`} aria-label={`Reorder ${chaptersWidgetLabel(widget)}`} {...attributes} {...listeners}>
+        <GripVertical size={14} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
+const CHAPTERS_WIDGET_LABELS: Record<ChaptersWidgetId, string> = {
+  shelf: "Shelf",
+  chapter_prep: "Chapter Prep",
+  linked_materials: "Linked Materials",
+  scenes: "Scenes",
+  scene_materials: "Scene Materials",
+};
+
+function chaptersWidgetLabel(widget: ChaptersWidgetLayout | ChaptersWidgetId) {
+  if (typeof widget === "string") {
+    return CHAPTERS_WIDGET_LABELS[widget];
+  }
+  return widget.title?.trim() || CHAPTERS_WIDGET_LABELS[widget.id];
+}
+
+function normalizeChaptersWidgetLayout(value: unknown): ChaptersWidgetLayout[] {
+  const source = Array.isArray(value) ? value : [];
+  const fromPrefs = new Map<string, Partial<ChaptersWidgetLayout>>();
+  for (const item of source) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (!isChaptersWidgetId(record.id)) {
+      continue;
+    }
+    fromPrefs.set(record.id, {
+      id: record.id,
+      enabled: typeof record.enabled === "boolean" ? record.enabled : undefined,
+      order: Number.isFinite(Number(record.order)) ? Number(record.order) : undefined,
+      size: isChaptersWidgetSize(record.size) ? record.size : undefined,
+      title: typeof record.title === "string" ? record.title : undefined,
+    });
+  }
+  return DEFAULT_CHAPTERS_WIDGET_LAYOUT.map((fallback) => {
+    const saved = fromPrefs.get(fallback.id) ?? {};
+    return {
+      ...fallback,
+      ...saved,
+      id: fallback.id,
+      enabled: saved.enabled ?? fallback.enabled,
+      order: saved.order ?? fallback.order,
+      size: saved.size ?? fallback.size,
+    };
+  }).sort((left, right) => left.order - right.order);
+}
+
+function normalizeChaptersWidgetTints(value: unknown): ChaptersWidgetTintMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      (entry): entry is [string, ChaptersWidgetTint] => isChaptersWidgetId(entry[0]) && isChaptersWidgetTint(entry[1]),
+    ),
+  );
+}
+
+function normalizeChaptersWidgetIcons(value: unknown): ChaptersWidgetIconMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([widgetId, iconId]) => [widgetId, typeof iconId === "string" && CHAPTERS_WIDGET_ICON_IDS.has(iconId) ? iconId : ""] as const)
+      .filter((entry): entry is [string, ChaptersWidgetIconId] => isChaptersWidgetId(entry[0]) && CHAPTERS_WIDGET_ICON_IDS.has(entry[1])),
+  );
+}
+
+function isChaptersWidgetId(value: unknown): value is ChaptersWidgetId {
+  return typeof value === "string" && value in CHAPTERS_WIDGET_LABELS;
+}
+
+function isChaptersWidgetSize(value: unknown): value is ChaptersWidgetSize {
+  return value === "compact" || value === "normal" || value === "wide";
+}
+
+function isChaptersWidgetTint(value: unknown): value is ChaptersWidgetTint {
+  return value === "system" || isHexColor(value);
+}
+
+function isHexColor(value: unknown): value is `#${string}` {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function chapterWidgetDisplayColor(color: string) {
+  return isHexColor(color) ? `color-mix(in srgb, ${color} 14%, #fffaf3)` : "transparent";
 }
 
 function SceneEditor({

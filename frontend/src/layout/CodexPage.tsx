@@ -1034,6 +1034,15 @@ export function CodexPage() {
                     assets={workspaceAssetsQuery.data?.items ?? []}
                     currentCardTitle={cardQuery.data?.title ?? null}
                     onAppendToCurrentCard={(text) => appendNotebookTextToCurrentCard(text)}
+                    recentCustomColors={normalizeDashboardRecentCustomColors(activeWorkspace?.ui_preferences.dashboard_recent_custom_colors)}
+                    onRememberCustomColor={(color) => {
+                      updateWorkspacePreferences({
+                        dashboard_recent_custom_colors: nextDashboardRecentCustomColors(
+                          normalizeDashboardRecentCustomColors(activeWorkspace?.ui_preferences.dashboard_recent_custom_colors),
+                          color,
+                        ),
+                      });
+                    }}
                   />
                 </Suspense>
               </div>
@@ -1074,6 +1083,15 @@ export function CodexPage() {
                 assets={workspaceAssetsQuery.data?.items ?? []}
                 currentCardTitle={cardQuery.data?.title ?? null}
                 onAppendToCurrentCard={(text) => appendNotebookTextToCurrentCard(text)}
+                recentCustomColors={normalizeDashboardRecentCustomColors(activeWorkspace?.ui_preferences.dashboard_recent_custom_colors)}
+                onRememberCustomColor={(color) => {
+                  updateWorkspacePreferences({
+                    dashboard_recent_custom_colors: nextDashboardRecentCustomColors(
+                      normalizeDashboardRecentCustomColors(activeWorkspace?.ui_preferences.dashboard_recent_custom_colors),
+                      color,
+                    ),
+                  });
+                }}
               />
             </Suspense>
           )}
@@ -1188,6 +1206,7 @@ export function CodexPage() {
                   assets={workspaceAssetsQuery.data?.items ?? []}
                   boards={boardsQuery.data?.items ?? []}
                   events={plotEventsQuery.data?.items ?? []}
+                  onUpdatePreferences={updateWorkspacePreferences}
                   onCreateChapter={async (payload) => {
                     const chapter = await api.createChapter(workspaceSlug, payload);
                     await refreshWorkspace();

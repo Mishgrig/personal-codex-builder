@@ -1,6 +1,8 @@
 .notebook-column {
   min-width: 240px;
   max-width: min(68vw, 980px);
+  max-height: calc(100vh - 116px);
+  min-height: 0;
 }
 
 .notebook-panel {
@@ -10,17 +12,22 @@
   border: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(20, 29, 58, 0.9), rgba(11, 18, 36, 0.93));
   box-shadow: var(--shadow);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .notebook-panel .rich-body {
-  min-height: 360px;
+  min-height: 180px;
 }
 
 .notebook-composer {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  flex: 1;
+  min-height: 0;
 }
 
 .notebook-item-toolbar {
@@ -38,6 +45,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 0 0 auto;
+  max-height: min(30vh, 280px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .notebook-item-tab {
@@ -126,6 +137,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
   padding: 14px;
   border-radius: 16px;
   background: rgba(8, 14, 28, 0.48);
@@ -195,6 +209,9 @@
 .notebook-attachment-list {
   display: grid;
   gap: 8px;
+  flex: 0 0 auto;
+  max-height: 180px;
+  overflow: auto;
 }
 
 .notebook-attachment {
@@ -275,20 +292,23 @@
   color: #fca5a5;
 }
 
-.notebook-plain-text {
-  min-height: 180px;
-}
-
-.notebook-quick-textarea {
-  min-height: 260px;
-  resize: vertical;
-}
-
 .notebook-rich-editor-shell {
   border: 1px solid rgba(126, 82, 54, 0.14);
   border-radius: 16px;
   background: rgba(255, 251, 243, 0.82);
-  padding: 10px;
+  flex: 1 1 auto;
+  min-height: 240px;
+  max-height: min(62vh, 760px);
+  overflow: hidden;
+}
+
+.notebook-rich-editor-shell .rich-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  background: rgba(255, 251, 243, 0.9);
+  color: var(--text);
 }
 
 .notebook-icon-picker {
