@@ -13,7 +13,8 @@ import {
   Check,
   ChevronDown,
   Code2,
-  Copy,
+  ClipboardCopy,
+  ClipboardPaste,
   Eraser,
   Heading1,
   Heading2,
@@ -22,11 +23,9 @@ import {
   Italic,
   List,
   ListOrdered,
-  Paintbrush,
   Pilcrow,
   Quote,
   Redo2,
-  Strikethrough,
   Underline as UnderlineIcon,
   Undo2,
 } from "lucide-react";
@@ -46,14 +45,11 @@ interface RichTextEditorProps {
   toolbarMode?: "inline" | "popover";
 }
 
-const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
-
 interface FormatSnapshot {
   block: "body" | "h1" | "h2" | "h3" | "mono" | "bullet" | "ordered" | "quote";
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  strike: boolean;
   color: string;
   highlight: string;
   fontSize: string;
@@ -171,9 +167,6 @@ export function RichTextEditor({
       <button className={editor.isActive("underline") ? "toolbar-button active" : "toolbar-button"} title="Underline" aria-label="Underline" onClick={() => editor.chain().focus().toggleUnderline().run()}>
         <UnderlineIcon size={16} />
       </button>
-      <button className={editor.isActive("strike") ? "toolbar-button active" : "toolbar-button"} title="Strikethrough" aria-label="Strikethrough" onClick={() => editor.chain().focus().toggleStrike().run()}>
-        <Strikethrough size={16} />
-      </button>
       <span className="editor-toolbar-separator" aria-hidden="true" />
       <ColorPalettePicker
         value={(editor.getAttributes("textStyle") as { color?: string }).color}
@@ -218,7 +211,7 @@ export function RichTextEditor({
         aria-label="Copy formatting"
         onClick={() => setCopiedFormat(readCurrentFormat(editor, fontSize))}
       >
-        <Copy size={15} />
+        <ClipboardCopy size={15} />
       </button>
       <button
         className="toolbar-button"
@@ -227,7 +220,7 @@ export function RichTextEditor({
         disabled={!copiedFormat}
         onClick={() => copiedFormat && applyCopiedFormat(editor, copiedFormat, setFontSize)}
       >
-        <Paintbrush size={15} />
+        <ClipboardPaste size={15} />
       </button>
     </>
   );
@@ -255,12 +248,6 @@ export function RichTextEditor({
       <EditorContent editor={editor} />
     </div>
   );
-}
-
-function applyFont(editor: NonNullable<ReturnType<typeof useEditor>>, fontSize: string, setFontSize: (value: string) => void, delta: number) {
-  const next = String(Math.min(16, Math.max(8, Number(fontSize || "14") + delta)));
-  setFontSize(next);
-  editor.chain().focus().setFontSize(`${next}px`).run();
 }
 
 function currentBlock(editor: NonNullable<ReturnType<typeof useEditor>>): FormatSnapshot["block"] {
@@ -306,7 +293,6 @@ function readCurrentFormat(editor: NonNullable<ReturnType<typeof useEditor>>, fa
     bold: editor.isActive("bold"),
     italic: editor.isActive("italic"),
     underline: editor.isActive("underline"),
-    strike: editor.isActive("strike"),
     color: textStyle.color ?? "",
     highlight: highlight.color ?? "",
     fontSize: (textStyle.fontSize ?? `${fallbackFontSize}px`).replace("px", ""),
@@ -323,7 +309,6 @@ function applyCopiedFormat(
   if (snapshot.bold) editor.chain().focus().toggleBold().run();
   if (snapshot.italic) editor.chain().focus().toggleItalic().run();
   if (snapshot.underline) editor.chain().focus().toggleUnderline().run();
-  if (snapshot.strike) editor.chain().focus().toggleStrike().run();
   if (snapshot.color) editor.chain().focus().setColor(snapshot.color).run();
   if (snapshot.highlight) editor.chain().focus().setHighlight({ color: snapshot.highlight }).run();
   setFontSize(snapshot.fontSize);

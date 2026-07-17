@@ -764,22 +764,42 @@ select {
 }
 
 .notebook-rich-editor-shell {
+  position: relative;
   height: auto;
   max-height: none;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 
 .notebook-rich-editor-shell .rich-body {
   min-height: 132px;
   height: auto;
-  max-height: min(54vh, 700px);
+  max-height: max(132px, min(42vh, calc(100vh - 562px)));
   overflow-y: auto;
+  color: #1f1a16;
+  line-height: 1.18;
+  font-size: var(--font-md);
+}
+
+.notebook-rich-editor-shell .rich-body p {
+  margin: 0 0 0.12em;
+  color: #1f1a16;
+  line-height: 1.18;
 }
 
 .notebook-rich-editor-shell .editor-toolbar-popover {
+  position: absolute;
+  left: 0;
+  right: auto;
+  bottom: calc(100% + 8px);
   width: auto;
-  max-width: none;
+  max-width: min(360px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid rgba(126, 82, 54, 0.16);
+  border-radius: 16px;
+  box-shadow: 0 18px 42px rgba(82, 53, 35, 0.18);
 }
 
 .detail-card {

@@ -6,6 +6,7 @@ import {
   BookOpen,
   ChevronLeft,
   ChevronRight,
+  CopyPlus,
   FileText,
   Flag,
   Image as ImageIcon,
@@ -190,6 +191,22 @@ export function WorkspaceNotebookPanel({
       .catch(() => undefined);
   }
 
+  function duplicateItem(itemId: string) {
+    setDraft((current) => {
+      if (!current) {
+        return current;
+      }
+      const index = current.items.findIndex((item) => item.id === itemId);
+      if (index < 0) {
+        return current;
+      }
+      const copy = duplicateNotebookItem(current.items[index], index + 1);
+      const nextItems = [...current.items.slice(0, index + 1), copy, ...current.items.slice(index + 1)];
+      setSelectedItemId(copy.id);
+      return normalizeNotebookDraft({ ...current, items: nextItems });
+    });
+  }
+
   async function removeAssetFromItem(itemId: string, assetId: string) {
     if (!draft) {
       return;
@@ -252,6 +269,7 @@ export function WorkspaceNotebookPanel({
                 item={selectedItem}
                 onChange={(patch) => updateItem(selectedItem.id, patch)}
                 onSave={handleSave}
+                onDuplicate={() => duplicateItem(selectedItem.id)}
                 onUploadAsset={onUploadAsset}
                 onDeleteAsset={(assetId) => removeAssetFromItem(selectedItem.id, assetId)}
                 assets={assets}
@@ -324,6 +342,7 @@ function NotebookItemEditor({
   item,
   onChange,
   onSave,
+  onDuplicate,
   onUploadAsset,
   onDeleteAsset,
   assets,
@@ -333,6 +352,7 @@ function NotebookItemEditor({
   item: WorkspaceNotebookItem;
   onChange: (patch: Partial<WorkspaceNotebookItem>) => void;
   onSave: () => Promise<void>;
+  onDuplicate: () => void;
   onUploadAsset: (file: File) => Promise<WorkspaceAsset>;
   onDeleteAsset: (assetId: string) => Promise<void>;
   assets: WorkspaceAsset[];
@@ -395,6 +415,14 @@ function NotebookItemEditor({
           </details>
         </div>
         <div className="notebook-editor-tools">
+          <button
+            className="icon-button notebook-tool-button"
+            title="Duplicate note"
+            aria-label={`Duplicate ${notebookItemTitle(item)}`}
+            onClick={onDuplicate}
+          >
+            <CopyPlus size={14} />
+          </button>
           <label className="secondary-button small notebook-upload-button">
             <Upload size={14} />
             <span className="sr-only">{uploadState === "uploading" ? "Adding file" : "Add file"}</span>
@@ -537,6 +565,17 @@ function makeNotebookItem(type: WorkspaceNotebookItemType, sortOrder: number): W
     type,
     title: type === "plain_text" ? "Quick note" : itemTypeLabel(type),
     sort_order: sortOrder,
+  };
+}
+
+function duplicateNotebookItem(item: WorkspaceNotebookItem, sortOrder: number): WorkspaceNotebookItem {
+  return {
+    ...item,
+    id: `note-${crypto.randomUUID().slice(0, 8)}`,
+    title: `${notebookItemTitle(item)} copy`,
+    sort_order: sortOrder,
+    body_json: item.body_json ? JSON.parse(JSON.stringify(item.body_json)) : item.body_json,
+    asset_ids: item.asset_ids ? [...item.asset_ids] : item.asset_ids,
   };
 }
 
