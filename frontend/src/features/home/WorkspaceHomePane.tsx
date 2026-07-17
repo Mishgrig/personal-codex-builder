@@ -31,7 +31,7 @@ import {
   Users,
 } from "lucide-react";
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CardListItem,
   Chapter,
@@ -757,24 +757,22 @@ export function WorkspaceHomePane({
               <div className="dashboard-widget-settings-list">
                 {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
                   <SortableWidgetSettingRow key={widget.id} widget={widget}>
-                    <label className="tiny-toggle">
-                      <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
-                      {isSystemWidget(widget) ? (
-                        <span>{widgetLabel(widget)}</span>
-                      ) : (
-                        <input
-                          className="widget-title-input"
-                          aria-label={`Widget title: ${widgetLabel(widget)}`}
+                    <div className={isSystemWidget(widget) ? "widget-setting-title" : "widget-setting-title custom"}>
+                      <label className="tiny-toggle widget-enabled-toggle">
+                        <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
+                        {isSystemWidget(widget) ? (
+                          <span>{widgetLabel(widget)}</span>
+                        ) : null}
+                      </label>
+                      {!isSystemWidget(widget) ? (
+                        <EditableWidgetTitle
                           value={widgetLabel(widget)}
-                          onChange={(event) => patchWidget(widget.id, { title: event.target.value })}
+                          fallback={widgetLabel(widget.kind)}
+                          onCommit={(title) => patchWidget(widget.id, { title })}
                         />
-                      )}
-                    </label>
-                    <select className="mini-select" value={widget.size} onChange={(event) => patchWidget(widget.id, { size: event.target.value as DashboardWidgetSize })}>
-                      <option value="compact">Compact</option>
-                      <option value="normal">Normal</option>
-                      <option value="wide">Wide</option>
-                    </select>
+                      ) : null}
+                    </div>
+                    <WidgetSizePicker value={widget.size} onChange={(size) => patchWidget(widget.id, { size })} />
                     <ColorPalettePicker
                       value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
                       label={`Widget color: ${widgetLabel(widget)}`}
@@ -862,6 +860,101 @@ function EmptyWidget({ icon, text }: { icon: React.ReactNode; text: string }) {
       {icon}
       <p>{text}</p>
     </div>
+  );
+}
+
+function EditableWidgetTitle({
+  value,
+  fallback,
+  onCommit,
+}: {
+  value: string;
+  fallback: string;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const lastCommitted = useRef(value);
+
+  useEffect(() => {
+    setDraft(value);
+    lastCommitted.current = value;
+  }, [value]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      commitTitle(draft, fallback, lastCommitted, onCommit);
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [draft, fallback, onCommit]);
+
+  return (
+    <input
+      className="widget-title-input"
+      aria-label={`Widget title: ${value}`}
+      value={draft}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => commitTitle(draft, fallback, lastCommitted, onCommit)}
+    />
+  );
+}
+
+function commitTitle(
+  draft: string,
+  fallback: string,
+  lastCommitted: React.MutableRefObject<string>,
+  onCommit: (value: string) => void,
+) {
+  const next = draft.trim() || fallback;
+  if (next === lastCommitted.current) {
+    return;
+  }
+  lastCommitted.current = next;
+  onCommit(next);
+}
+
+function WidgetSizePicker({ value, onChange }: { value: DashboardWidgetSize; onChange: (value: DashboardWidgetSize) => void }) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const options: DashboardWidgetSize[] = ["compact", "normal", "wide"];
+  const labels: Record<DashboardWidgetSize, string> = {
+    compact: "Square widget",
+    normal: "Double-width widget",
+    wide: "Full-width widget",
+  };
+  return (
+    <details ref={detailsRef} className="widget-size-picker">
+      <summary className="widget-size-trigger" aria-label={labels[value]} title={labels[value]}>
+        <WidgetSizeIcon size={value} />
+      </summary>
+      <div className="widget-size-menu">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            className={option === value ? "active" : ""}
+            aria-label={`Set ${labels[option].toLowerCase()}`}
+            title={labels[option]}
+            onClick={() => {
+              onChange(option);
+              if (detailsRef.current) {
+                detailsRef.current.open = false;
+              }
+            }}
+          >
+            <WidgetSizeIcon size={option} />
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function WidgetSizeIcon({ size }: { size: DashboardWidgetSize }) {
+  return (
+    <span className={`widget-size-icon ${size}`} aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
   );
 }
 

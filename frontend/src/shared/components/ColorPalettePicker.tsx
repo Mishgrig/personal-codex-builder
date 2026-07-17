@@ -136,7 +136,7 @@ export function ColorPalettePicker({
                   }}
                 >
                   <Ban size={19} />
-                  <span>Нет</span>
+                  <span>None</span>
                 </button>
               ) : null}
               <div className={`color-picker-grid variant-${paletteVariant}`} aria-label="Color palette">
@@ -152,7 +152,7 @@ export function ColorPalettePicker({
                 ))}
               </div>
               <div className="color-picker-other">
-                <span>Другой</span>
+                <span>Other</span>
                 <div>
                   {normalizedRecentColors.map((color) => (
                     <button
@@ -164,14 +164,14 @@ export function ColorPalettePicker({
                       onClick={() => selectColor(color)}
                     />
                   ))}
-                  <button type="button" className="color-picker-tool" aria-label="Open custom color" title="Другой цвет" onClick={() => setCustomOpen(true)}>
+                  <button type="button" className="color-picker-tool" aria-label="Open custom color" title="Custom color" onClick={() => setCustomOpen(true)}>
                     <PlusCircle size={21} />
                   </button>
                   <button
                     type="button"
                     className="color-picker-tool"
                     aria-label="Pick color from screen"
-                    title="Пипетка"
+                    title="Eyedropper"
                     disabled={!canUseEyeDropper()}
                     onClick={() => void pickFromScreen((color) => selectColor(color, true))}
                   >
@@ -246,7 +246,7 @@ function CustomColorPanel({
           type="button"
           className="custom-color-eyedropper"
           aria-label="Pick color from screen"
-          title="Пипетка"
+          title="Eyedropper"
           disabled={!canUseEyeDropper()}
           onClick={() => void pickFromScreen(onChange)}
         >
@@ -264,7 +264,7 @@ function CustomColorPanel({
       </div>
       <div className="custom-color-fields">
         <label>
-          <span>16-ричный код</span>
+          <span>Hex</span>
           <input
             value={value}
             onChange={(event) => {
@@ -292,7 +292,7 @@ function CustomColorPanel({
       </div>
       <div className="custom-color-actions">
         <button type="button" className="secondary-button" onClick={onCancel}>
-          Отмена
+          Cancel
         </button>
         <button type="button" className="primary-button" onClick={onConfirm}>
           OK
