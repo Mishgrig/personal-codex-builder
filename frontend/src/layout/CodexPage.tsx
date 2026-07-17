@@ -1512,6 +1512,15 @@ export function CodexPage() {
                   schemas={schemasQuery.data ?? []}
                   allCards={allVisibleCards}
                   pinned={effectiveSelectedCardId ? pinnedCardIds.includes(effectiveSelectedCardId) : false}
+                  recentCustomColors={normalizeDashboardRecentCustomColors(activeWorkspace?.ui_preferences.dashboard_recent_custom_colors)}
+                  onRememberCustomColor={(color) => {
+                    updateWorkspacePreferences({
+                      dashboard_recent_custom_colors: nextDashboardRecentCustomColors(
+                        normalizeDashboardRecentCustomColors(activeWorkspace?.ui_preferences.dashboard_recent_custom_colors),
+                        color,
+                      ),
+                    });
+                  }}
                   onRefresh={refreshWorkspace}
                   onTogglePinned={togglePinnedCard}
                   onDeleteCurrent={async () => {
@@ -1762,6 +1771,27 @@ function readPinnedCardIds(preferences: Record<string, unknown> | undefined) {
     return [];
   }
   return value.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0);
+}
+
+function normalizeDashboardRecentCustomColors(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value
+        .map((item) => (typeof item === "string" ? item.trim().toLowerCase() : ""))
+        .filter((item) => /^#[0-9a-f]{6}$/i.test(item)),
+    ),
+  ).slice(0, 6);
+}
+
+function nextDashboardRecentCustomColors(current: string[], color: string) {
+  const normalized = color.trim().toLowerCase();
+  if (!/^#[0-9a-f]{6}$/i.test(normalized)) {
+    return current;
+  }
+  return [normalized, ...current.filter((item) => item !== normalized)].slice(0, 6);
 }
 
 function coreCardTypeTemplates(): CardSchema[] {

@@ -115,6 +115,7 @@ export function WorkspaceHomePane({
   const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false);
   const widgetLayout = normalizeWidgetLayout(workspace.ui_preferences.dashboard_widget_layout);
   const widgetTints = normalizeWidgetTints(workspace.ui_preferences.dashboard_widget_tints);
+  const recentCustomColors = normalizeRecentCustomColors(workspace.ui_preferences.dashboard_recent_custom_colors);
   const taskLists = normalizeDashboardTaskLists(workspace.ui_preferences.dashboard_task_lists);
   const pinnedLists = normalizePinnedLists(workspace.ui_preferences.dashboard_pinned_lists);
   const enabledWidgets = widgetLayout.filter((widget) => widget.enabled).sort((left, right) => left.order - right.order);
@@ -248,6 +249,10 @@ export function WorkspaceHomePane({
         [widgetId]: tint,
       },
     });
+  }
+
+  function rememberCustomColor(color: string) {
+    onUpdatePreferences({ dashboard_recent_custom_colors: nextRecentCustomColors(recentCustomColors, color) });
   }
 
   function widgetTint(widgetId: string) {
@@ -773,9 +778,12 @@ export function WorkspaceHomePane({
                     <ColorPalettePicker
                       value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
                       label={`Widget color: ${widgetLabel(widget)}`}
+                      paletteVariant="widget"
+                      recentColors={recentCustomColors}
                       align="right"
                       triggerClassName="widget-tint-trigger"
                       onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
+                      onRememberColor={rememberCustomColor}
                       onClear={() => patchWidgetTint(widget.id, "system")}
                       displayColor={widgetDisplayColor(widgetTint(widget.id))}
                       mapDisplayColor={widgetDisplayColor}
@@ -975,6 +983,21 @@ function normalizePinnedLists(value: unknown): PinnedListMap {
       Array.isArray(list) ? list.map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0) : [],
     ]),
   );
+}
+
+function normalizeRecentCustomColors(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(value.map((item) => (typeof item === "string" ? item.trim().toLowerCase() : "")).filter(isHexColor))).slice(0, 6);
+}
+
+function nextRecentCustomColors(current: string[], color: string) {
+  const normalized = color.trim().toLowerCase();
+  if (!isHexColor(normalized)) {
+    return current;
+  }
+  return [normalized, ...current.filter((item) => item !== normalized)].slice(0, 6);
 }
 
 function widgetDisplayColor(color: string) {

@@ -7,6 +7,9 @@ interface ColorPalettePickerProps {
   label: string;
   onChange: (color: string) => void;
   onClear?: () => void;
+  paletteVariant?: "default" | "widget";
+  recentColors?: string[];
+  onRememberColor?: (color: string) => void;
   align?: "left" | "right";
   triggerClassName?: string;
   previewLabel?: string;
@@ -26,13 +29,28 @@ const PALETTE_ROWS = [
   ["#6f1708", "#7f0000", "#783f04", "#7f6000", "#274e13", "#0c343d", "#1c4587", "#073763", "#20124d", "#4c1130"],
 ];
 
+const WIDGET_PALETTE_ROWS = [
+  ["#000000", "#3a3a3a", "#666666", "#969696", "#c4c4c4", "#e2e2e2", "#f2f2f2", "#ffffff"],
+  ["#b00000", "#ff1a12", "#ff9800", "#fff000", "#00f000", "#12d8d8", "#276ef1", "#f000df"],
+  ["#e02d12", "#f2551f", "#f47b20", "#f5b51f", "#95d91f", "#1fc96b", "#16b5ad", "#1583ff"],
+  ["#d60000", "#ff0040", "#ff5c00", "#ffd000", "#28c900", "#00bcd4", "#004cff", "#6a00ff"],
+  ["#9f1d0b", "#c70039", "#d66b00", "#d99b00", "#4f9f22", "#147c8a", "#0058b8", "#4b1fa6"],
+  ["#731500", "#8f0000", "#8a4b00", "#8a6a00", "#245c12", "#07545f", "#003d80", "#321061"],
+  ["#5a0d00", "#640000", "#5f3400", "#5c4a00", "#183f0b", "#06383f", "#002a59", "#21083f"],
+  ["#e8b3a8", "#f4c6c1", "#f6dfbd", "#faedc2", "#d9ead1", "#d0e0e3", "#c9d9f2", "#d9d2e9"],
+];
+
 const DEFAULT_COLOR = "#ff0000";
+const MAX_RECENT_COLORS = 6;
 
 export function ColorPalettePicker({
   value,
   label,
   onChange,
   onClear,
+  paletteVariant = "default",
+  recentColors = [],
+  onRememberColor,
   align = "right",
   triggerClassName = "",
   previewLabel,
@@ -46,6 +64,8 @@ export function ColorPalettePicker({
   const [draft, setDraft] = useState(normalizeHex(value) ?? DEFAULT_COLOR);
   const currentColor = normalizeHex(value);
   const paletteId = useId();
+  const paletteRows = paletteVariant === "widget" ? WIDGET_PALETTE_ROWS : PALETTE_ROWS;
+  const normalizedRecentColors = uniqueHexColors(recentColors).slice(0, MAX_RECENT_COLORS);
 
   useEffect(() => {
     if (currentColor) {
@@ -67,8 +87,11 @@ export function ColorPalettePicker({
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
-  const selectColor = (color: string) => {
+  const selectColor = (color: string, remember = false) => {
     onChange(color);
+    if (remember) {
+      onRememberColor?.(color);
+    }
     setDraft(color);
     setOpen(false);
     setCustomOpen(false);
@@ -93,13 +116,13 @@ export function ColorPalettePicker({
         {previewLabel ? <span>{previewLabel}</span> : null}
       </button>
       {open ? (
-        <div id={paletteId} className={`color-picker-panel ${customOpen ? "is-custom" : ""}`} role="dialog" aria-label={label}>
+        <div id={paletteId} className={`color-picker-panel variant-${paletteVariant} ${customOpen ? "is-custom" : ""}`} role="dialog" aria-label={label}>
           {customOpen ? (
             <CustomColorPanel
               value={draft}
               onChange={setDraft}
               onCancel={() => setCustomOpen(false)}
-              onConfirm={() => selectColor(draft)}
+              onConfirm={() => selectColor(draft, true)}
             />
           ) : (
             <>
@@ -116,8 +139,8 @@ export function ColorPalettePicker({
                   <span>Нет</span>
                 </button>
               ) : null}
-              <div className="color-picker-grid" aria-label="Color palette">
-                {PALETTE_ROWS.flat().map((color) => (
+              <div className={`color-picker-grid variant-${paletteVariant}`} aria-label="Color palette">
+                {paletteRows.flat().map((color) => (
                   <button
                     key={color}
                     type="button"
@@ -131,6 +154,16 @@ export function ColorPalettePicker({
               <div className="color-picker-other">
                 <span>Другой</span>
                 <div>
+                  {normalizedRecentColors.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      className={`color-picker-swatch recent${currentColor === color ? " active" : ""}`}
+                      style={swatchStyle(mapDisplayColor?.(color) ?? color)}
+                      aria-label={`${label}: ${color}`}
+                      onClick={() => selectColor(color)}
+                    />
+                  ))}
                   <button type="button" className="color-picker-tool" aria-label="Open custom color" title="Другой цвет" onClick={() => setCustomOpen(true)}>
                     <PlusCircle size={21} />
                   </button>
@@ -140,7 +173,7 @@ export function ColorPalettePicker({
                     aria-label="Pick color from screen"
                     title="Пипетка"
                     disabled={!canUseEyeDropper()}
-                    onClick={() => void pickFromScreen(selectColor)}
+                    onClick={() => void pickFromScreen((color) => selectColor(color, true))}
                   >
                     <Pipette size={21} />
                   </button>
@@ -302,6 +335,19 @@ function normalizeHex(value?: string) {
     return `#${r}${r}${g}${g}${b}${b}`;
   }
   return null;
+}
+
+function uniqueHexColors(colors: string[]) {
+  const seen = new Set<string>();
+  return colors
+    .map((color) => normalizeHex(color) ?? "")
+    .filter((color) => {
+      if (!color || seen.has(color)) {
+        return false;
+      }
+      seen.add(color);
+      return true;
+    });
 }
 
 interface Rgb {

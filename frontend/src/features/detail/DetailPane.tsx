@@ -30,6 +30,8 @@ interface DetailPaneProps {
   onDeleteCurrent: () => Promise<void>;
   onOpenCard: (cardId: number) => void;
   onOpenCategoryManager: () => void;
+  recentCustomColors?: string[];
+  onRememberCustomColor?: (color: string) => void;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -47,6 +49,8 @@ export function DetailPane({
   onDeleteCurrent,
   onOpenCard,
   onOpenCategoryManager,
+  recentCustomColors = [],
+  onRememberCustomColor,
 }: DetailPaneProps) {
   const [draft, setDraft] = useState<CardDetail | null>(card);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -387,6 +391,8 @@ export function DetailPane({
           <Suspense fallback={<div className="editor-shell loading">Preparing editor…</div>}>
             <RichTextEditor
               value={draft.body_json}
+              recentCustomColors={recentCustomColors}
+              onRememberCustomColor={onRememberCustomColor}
               onChange={(bodyJson) =>
                 setDraft((current) =>
                   current

@@ -14,6 +14,8 @@ import { FontSize } from "./fontSizeExtension";
 interface RichTextEditorProps {
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
+  recentCustomColors?: string[];
+  onRememberCustomColor?: (color: string) => void;
 }
 
 const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
@@ -29,7 +31,7 @@ interface FormatSnapshot {
   fontSize: string;
 }
 
-export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
+export function RichTextEditor({ value, onChange, recentCustomColors = [], onRememberCustomColor }: RichTextEditorProps) {
   const [fontSize, setFontSize] = useState("14");
   const [copiedFormat, setCopiedFormat] = useState<FormatSnapshot | null>(null);
   const editor = useEditor({
@@ -148,7 +150,9 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
           label="Text color"
           previewLabel="A"
           align="left"
+          recentColors={recentCustomColors}
           onChange={(color) => editor.chain().focus().setColor(color).run()}
+          onRememberColor={onRememberCustomColor}
           onClear={() => editor.chain().focus().unsetColor().run()}
         />
         <ColorPalettePicker
@@ -156,7 +160,9 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
           label="Highlight color"
           icon={<Highlighter size={14} />}
           align="left"
+          recentColors={recentCustomColors}
           onChange={(color) => editor.chain().focus().setHighlight({ color }).run()}
+          onRememberColor={onRememberCustomColor}
           onClear={() => editor.chain().focus().unsetHighlight().run()}
         />
         <button
