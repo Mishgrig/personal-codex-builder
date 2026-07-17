@@ -74,7 +74,7 @@ export function normalizeWidgetLayout(value: unknown): DashboardWidgetLayout[] {
         enabled: typeof item.enabled === "boolean" ? item.enabled : true,
         order: typeof item.order === "number" ? item.order : 900 + index * 10,
         size,
-        title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : widgetLabel(kind),
+        title: typeof item.title === "string" && item.title.trim() ? item.title.trim() : undefined,
       } satisfies DashboardWidgetLayout;
     })
     .filter((item): item is DashboardWidgetLayout => item !== null);

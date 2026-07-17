@@ -1374,7 +1374,7 @@ select {
   }
 
   .dashboard-widget-setting-row {
-    grid-template-columns: 30px minmax(0, 1fr) 48px 44px 30px 30px;
+    grid-template-columns: 30px minmax(0, 1fr) 48px 44px 44px 30px 30px;
     gap: 6px;
   }
 
@@ -1415,12 +1415,16 @@ select {
   position: absolute;
   top: 24px;
   right: 24px;
-  z-index: 2;
+  z-index: 30;
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
   max-width: min(380px, 48%);
+}
+
+.dashboard-settings-popover-panel {
+  width: min(1120px, calc(100vw - 48px));
 }
 
 .home-hero-actions {
@@ -1488,6 +1492,12 @@ select {
     right: 24px;
     max-width: none;
     justify-content: flex-start;
+  }
+
+  .dashboard-settings-popover-panel {
+    left: 0;
+    right: auto;
+    width: calc(100vw - 48px);
   }
 }
 

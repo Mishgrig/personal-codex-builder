@@ -19,6 +19,7 @@ import {
   GripVertical,
   Home,
   Images,
+  Info,
   MapPin,
   Milestone,
   NotebookPen,
@@ -29,6 +30,7 @@ import {
   Table2,
   Trash2,
   Users,
+  type LucideIcon,
 } from "lucide-react";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -54,6 +56,7 @@ import {
   truncate,
   widgetLabel,
   type DashboardTask,
+  type DashboardWidgetId,
   type DashboardWidgetLayout,
   type DashboardWidgetSize,
 } from "./dashboardModel";
@@ -62,6 +65,51 @@ type WidgetTint = "system" | `#${string}`;
 type WidgetTintMap = Record<string, WidgetTint>;
 type TaskListMap = Record<string, DashboardTask[]>;
 type PinnedListMap = Record<string, number[]>;
+
+const WIDGET_ICON_OPTIONS = [
+  { id: "activity", label: "Activity", Icon: Activity },
+  { id: "book", label: "Book", Icon: BookOpen },
+  { id: "check", label: "Check", Icon: CheckCircle2 },
+  { id: "database", label: "Database", Icon: Database },
+  { id: "folder", label: "Folder", Icon: FolderOpen },
+  { id: "home", label: "Home", Icon: Home },
+  { id: "images", label: "Images", Icon: Images },
+  { id: "map", label: "Map", Icon: MapPin },
+  { id: "milestone", label: "Milestone", Icon: Milestone },
+  { id: "notebook", label: "Notebook", Icon: NotebookPen },
+  { id: "pin", label: "Pin", Icon: Pin },
+  { id: "settings", label: "Settings", Icon: Settings2 },
+  { id: "swords", label: "Swords", Icon: Swords },
+  { id: "table", label: "Table", Icon: Table2 },
+  { id: "users", label: "Users", Icon: Users },
+] as const satisfies ReadonlyArray<{ id: string; label: string; Icon: LucideIcon }>;
+
+type WidgetIconId = (typeof WIDGET_ICON_OPTIONS)[number]["id"];
+type WidgetIconMap = Record<string, WidgetIconId>;
+
+const WIDGET_ICON_IDS = new Set<string>(WIDGET_ICON_OPTIONS.map((option) => option.id));
+
+const DEFAULT_WIDGET_ICONS: Record<DashboardWidgetId, WidgetIconId> = {
+  recent_activity: "activity",
+  quick_note: "notebook",
+  chapters: "swords",
+  pinned_cards: "pin",
+  tasks: "check",
+  asset_reminders: "database",
+  knowledge_summary: "folder",
+  workspace_settings: "settings",
+};
+
+const SYSTEM_WIDGET_DESCRIPTIONS: Record<DashboardWidgetId, string> = {
+  recent_activity: "Shows the latest edited cards and local assets so you can quickly return to recent work.",
+  quick_note: "Captures a short note directly into the world notebook without leaving the Homepage.",
+  chapters: "Shows prepared chapters and opens the chapter planning workspace.",
+  pinned_cards: "Keeps selected Wiki, Character and Location cards close at hand.",
+  tasks: "Stores a lightweight checklist for this world.",
+  asset_reminders: "Surfaces local file health issues such as missing, unused or broken asset links.",
+  knowledge_summary: "Summarizes the current world graph with counts for entities, characters, locations and mentions.",
+  workspace_settings: "Shows world-level display preferences and quick access to local workspace settings.",
+};
 
 interface WorkspaceHomePaneProps {
   workspace: WorkspaceSummary;
@@ -115,6 +163,7 @@ export function WorkspaceHomePane({
   const [widgetSettingsOpen, setWidgetSettingsOpen] = useState(false);
   const widgetLayout = normalizeWidgetLayout(workspace.ui_preferences.dashboard_widget_layout);
   const widgetTints = normalizeWidgetTints(workspace.ui_preferences.dashboard_widget_tints);
+  const widgetIcons = normalizeWidgetIcons(workspace.ui_preferences.dashboard_widget_icons);
   const recentCustomColors = normalizeRecentCustomColors(workspace.ui_preferences.dashboard_recent_custom_colors);
   const taskLists = normalizeDashboardTaskLists(workspace.ui_preferences.dashboard_task_lists);
   const pinnedLists = normalizePinnedLists(workspace.ui_preferences.dashboard_pinned_lists);
@@ -221,7 +270,17 @@ export function WorkspaceHomePane({
     };
     const nextLayout = [...sorted];
     nextLayout.splice(sourceIndex >= 0 ? sourceIndex + 1 : nextLayout.length, 0, nextWidget);
-    updateWidgetLayout(nextLayout.map((item, order) => ({ ...item, order: (order + 1) * 10 })));
+    onUpdatePreferences({
+      dashboard_widget_layout: nextLayout.map((item, order) => ({ ...item, order: (order + 1) * 10 })),
+      dashboard_widget_tints: {
+        ...widgetTints,
+        [nextWidget.id]: widgetTint(widget.id),
+      },
+      dashboard_widget_icons: {
+        ...widgetIcons,
+        [nextWidget.id]: widgetIconId(widget),
+      },
+    });
   }
 
   function deleteWidget(widget: DashboardWidgetLayout) {
@@ -234,9 +293,12 @@ export function WorkspaceHomePane({
     delete nextTaskLists[widget.id];
     const nextPinnedLists = { ...pinnedLists };
     delete nextPinnedLists[widget.id];
+    const nextIcons = { ...widgetIcons };
+    delete nextIcons[widget.id];
     onUpdatePreferences({
       dashboard_widget_layout: widgetLayout.filter((item) => item.id !== widget.id).map((item, order) => ({ ...item, order: (order + 1) * 10 })),
       dashboard_widget_tints: nextTints,
+      dashboard_widget_icons: nextIcons,
       dashboard_task_lists: nextTaskLists,
       dashboard_pinned_lists: nextPinnedLists,
     });
@@ -255,8 +317,25 @@ export function WorkspaceHomePane({
     onUpdatePreferences({ dashboard_recent_custom_colors: nextRecentCustomColors(recentCustomColors, color) });
   }
 
+  function patchWidgetIcon(widgetId: string, iconId: WidgetIconId) {
+    onUpdatePreferences({
+      dashboard_widget_icons: {
+        ...widgetIcons,
+        [widgetId]: iconId,
+      },
+    });
+  }
+
   function widgetTint(widgetId: string) {
     return widgetTints[widgetId] ?? "system";
+  }
+
+  function widgetIconId(widget: DashboardWidgetLayout) {
+    return widgetIcons[widget.id] ?? DEFAULT_WIDGET_ICONS[widget.kind];
+  }
+
+  function widgetIconNode(widget: DashboardWidgetLayout, size = 18) {
+    return <WidgetIcon iconId={widgetIconId(widget)} size={size} />;
   }
 
   function tasksForWidget(widget: DashboardWidgetLayout) {
@@ -359,7 +438,7 @@ export function WorkspaceHomePane({
   function renderWidget(widget: DashboardWidgetLayout) {
     if (widget.kind === "recent_activity") {
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Recent Activity" description="Recently updated entities and local assets." icon={<Activity size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="Recently updated entities and local assets." icon={widgetIconNode(widget)}>
           {activityItems.length ? (
             <div className="home-card-list">
               {activityItems.map((item) => (
@@ -386,7 +465,7 @@ export function WorkspaceHomePane({
 
     if (widget.kind === "quick_note") {
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Quick Note" description="Capture a thought directly into Notebook." icon={<NotebookPen size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="Capture a thought directly into Notebook." icon={widgetIconNode(widget)}>
           <div className="quick-note-card">
             <textarea
               className="themed-textarea"
@@ -410,7 +489,7 @@ export function WorkspaceHomePane({
       const pinnedSearch = pinnedSearches[widget.id] ?? "";
       const pinnedSearchResults = pinnedSearchResultsForWidget(widget, widgetPinnedCards);
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="Important entities from Wiki, Characters and Locations." icon={<Pin size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="Important entities from Wiki, Characters and Locations." icon={widgetIconNode(widget)}>
           <div className="dashboard-widget-toolbar">
             <div className="segmented-control compact">
               <button
@@ -485,7 +564,7 @@ export function WorkspaceHomePane({
 
     if (widget.kind === "chapters") {
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Chapters" description={`${chapters.length} prepared chapters in this world.`} icon={<Swords size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description={`${chapters.length} prepared chapters in this world.`} icon={widgetIconNode(widget)}>
           <div className="dashboard-widget-toolbar">
             <div className="segmented-control compact">
               <button
@@ -531,7 +610,7 @@ export function WorkspaceHomePane({
       const taskTitle = taskDrafts[widget.id] ?? "";
       const todoCount = tasks.filter((task) => task.status !== "done").length;
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description={`${todoCount} open tasks stored in this world.`} icon={<CheckCircle2 size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description={`${todoCount} open tasks stored in this world.`} icon={widgetIconNode(widget)}>
           <div className="dashboard-inline-form">
             <textarea
               className="themed-textarea dashboard-task-input"
@@ -595,7 +674,7 @@ export function WorkspaceHomePane({
     if (widget.kind === "asset_reminders") {
       const reminders = assetReminderItems(assetHealth);
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Asset Reminders" description={`${assetReminderCount} file-health reminders.`} icon={<Database size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description={`${assetReminderCount} file-health reminders.`} icon={widgetIconNode(widget)}>
           {reminders.length ? (
             <div className="dashboard-reminder-list">
               {reminders.map((reminder) => (
@@ -616,7 +695,7 @@ export function WorkspaceHomePane({
       const characterCount = cards.filter((card) => card.schema_id === "character" || card.schema_id === "npc").length;
       const locationCount = cards.filter((card) => card.schema_id === "location").length;
       return (
-        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Knowledge Summary" description="A lightweight knowledge graph pulse." icon={<FolderOpen size={18} />}>
+        <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="A lightweight knowledge graph pulse." icon={widgetIconNode(widget)}>
           <div className="dashboard-stat-grid">
             <MiniStat label="Wiki entities" value={String(cards.length - characterCount - locationCount)} />
             <MiniStat label="Characters" value={String(characterCount)} />
@@ -628,7 +707,7 @@ export function WorkspaceHomePane({
     }
 
     return (
-      <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title="Workspace Settings" description="Preferences that travel with this local world." icon={<Settings2 size={18} />}>
+      <DashboardWidget key={widget.id} widget={widget} tint={widgetTint(widget.id)} title={widgetLabel(widget)} description="Preferences that travel with this local world." icon={widgetIconNode(widget)}>
         <div className="home-settings-grid">
           <div className="theme-preview-card">
             <span className="theme-preview-dot" />
@@ -691,10 +770,85 @@ export function WorkspaceHomePane({
     <section className="workspace-home-pane">
       <div className="home-hero">
         <div className="home-hero-utility">
-          <button className="secondary-button" onClick={() => setWidgetSettingsOpen((current) => !current)}>
-            <SlidersHorizontal size={14} />
-            {widgetSettingsOpen ? "Hide widget settings" : "Customize widgets"}
-          </button>
+          <div className="dashboard-settings-popover">
+            <button
+              className="secondary-button"
+              aria-expanded={widgetSettingsOpen}
+              aria-controls="dashboard-widget-settings"
+              onClick={() => setWidgetSettingsOpen((current) => !current)}
+            >
+              <SlidersHorizontal size={14} />
+              {widgetSettingsOpen ? "Hide widget settings" : "Customize widgets"}
+            </button>
+            {widgetSettingsOpen ? (
+              <section id="dashboard-widget-settings" className="home-panel dashboard-settings-panel dashboard-settings-popover-panel">
+                <div className="section-header">
+                  <div>
+                    <h2 className="dashboard-widget-title">
+                      <span>Dashboard widgets</span>
+                      <span className="dashboard-widget-title-icon"><SlidersHorizontal size={18} /></span>
+                    </h2>
+                    <p className="helper-text">Enable, resize and reorder the Home widgets. These preferences stay in this local world.</p>
+                  </div>
+                </div>
+                <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={reorderWidgets}>
+                  <SortableContext items={[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
+                    <div className="dashboard-widget-settings-list">
+                      {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
+                        <SortableWidgetSettingRow key={widget.id} widget={widget}>
+                          <div className={isSystemWidget(widget) ? "widget-setting-title" : "widget-setting-title custom"}>
+                            <label className="tiny-toggle widget-enabled-toggle" aria-label={`Show ${widgetLabel(widget)}`}>
+                              <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
+                            </label>
+                            <EditableWidgetTitle
+                              value={widget.title ?? ""}
+                              placeholder={isSystemWidget(widget) ? widgetLabel(widget.kind) : "Enter widget name"}
+                              ariaLabel={`Widget title: ${widgetLabel(widget)}`}
+                              onCommit={(title) => patchWidget(widget.id, { title })}
+                            />
+                            {isSystemWidget(widget) ? (
+                              <WidgetInfo label={widgetLabel(widget.kind)} description={SYSTEM_WIDGET_DESCRIPTIONS[widget.kind]} />
+                            ) : (
+                              <span className="widget-custom-badge" title="Custom widget">Custom</span>
+                            )}
+                          </div>
+                          <WidgetSizePicker value={widget.size} onChange={(size) => patchWidget(widget.id, { size })} />
+                          <ColorPalettePicker
+                            value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
+                            label={`Widget color: ${widgetLabel(widget)}`}
+                            paletteVariant="widget"
+                            recentColors={recentCustomColors}
+                            align="right"
+                            triggerClassName="widget-tint-trigger"
+                            onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
+                            onRememberColor={rememberCustomColor}
+                            onClear={() => patchWidgetTint(widget.id, "system")}
+                            displayColor={widgetDisplayColor(widgetTint(widget.id))}
+                            mapDisplayColor={widgetDisplayColor}
+                          />
+                          <WidgetIconPicker value={widgetIconId(widget)} onChange={(iconId) => patchWidgetIcon(widget.id, iconId)} />
+                          {isDuplicableWidget(widget) ? (
+                            <button className="mini-icon-button" title={`Duplicate ${widgetLabel(widget)}`} aria-label={`Duplicate ${widgetLabel(widget)}`} onClick={() => duplicateWidget(widget)}>
+                              <CopyPlus size={13} />
+                            </button>
+                          ) : (
+                            <span className="settings-row-spacer" aria-hidden="true" />
+                          )}
+                          {!isSystemWidget(widget) ? (
+                            <button className="mini-icon-button danger" title={`Delete ${widgetLabel(widget)}`} aria-label={`Delete ${widgetLabel(widget)}`} onClick={() => deleteWidget(widget)}>
+                              <Trash2 size={13} />
+                            </button>
+                          ) : (
+                            <span className="settings-row-spacer" aria-hidden="true" />
+                          )}
+                        </SortableWidgetSettingRow>
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
+              </section>
+            ) : null}
+          </div>
           <button className="secondary-button" title="Open world management" onClick={onOpenManager}>
             <Settings2 size={14} />
             Manage world
@@ -741,73 +895,6 @@ export function WorkspaceHomePane({
         </div>
       </div>
 
-      {widgetSettingsOpen ? (
-        <section className="home-panel dashboard-settings-panel">
-          <div className="section-header">
-            <div>
-              <h2 className="dashboard-widget-title">
-                <span>Dashboard widgets</span>
-                <span className="dashboard-widget-title-icon"><SlidersHorizontal size={18} /></span>
-              </h2>
-              <p className="helper-text">Enable, resize and reorder the Home widgets. These preferences stay in this local world.</p>
-            </div>
-          </div>
-          <DndContext sensors={widgetSensors} collisionDetection={closestCenter} onDragEnd={reorderWidgets}>
-            <SortableContext items={[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => widget.id)} strategy={verticalListSortingStrategy}>
-              <div className="dashboard-widget-settings-list">
-                {[...widgetLayout].sort((left, right) => left.order - right.order).map((widget) => (
-                  <SortableWidgetSettingRow key={widget.id} widget={widget}>
-                    <div className={isSystemWidget(widget) ? "widget-setting-title" : "widget-setting-title custom"}>
-                      <label className="tiny-toggle widget-enabled-toggle">
-                        <input type="checkbox" checked={widget.enabled} onChange={(event) => patchWidget(widget.id, { enabled: event.target.checked })} />
-                        {isSystemWidget(widget) ? (
-                          <span>{widgetLabel(widget)}</span>
-                        ) : null}
-                      </label>
-                      {!isSystemWidget(widget) ? (
-                        <EditableWidgetTitle
-                          value={widgetLabel(widget)}
-                          fallback={widgetLabel(widget.kind)}
-                          onCommit={(title) => patchWidget(widget.id, { title })}
-                        />
-                      ) : null}
-                    </div>
-                    <WidgetSizePicker value={widget.size} onChange={(size) => patchWidget(widget.id, { size })} />
-                    <ColorPalettePicker
-                      value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
-                      label={`Widget color: ${widgetLabel(widget)}`}
-                      paletteVariant="widget"
-                      recentColors={recentCustomColors}
-                      align="right"
-                      triggerClassName="widget-tint-trigger"
-                      onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
-                      onRememberColor={rememberCustomColor}
-                      onClear={() => patchWidgetTint(widget.id, "system")}
-                      displayColor={widgetDisplayColor(widgetTint(widget.id))}
-                      mapDisplayColor={widgetDisplayColor}
-                    />
-                    {isDuplicableWidget(widget) ? (
-                      <button className="mini-icon-button" title={`Duplicate ${widgetLabel(widget)}`} aria-label={`Duplicate ${widgetLabel(widget)}`} onClick={() => duplicateWidget(widget)}>
-                        <CopyPlus size={13} />
-                      </button>
-                    ) : (
-                      <span className="settings-row-spacer" aria-hidden="true" />
-                    )}
-                    {!isSystemWidget(widget) ? (
-                      <button className="mini-icon-button danger" title={`Delete ${widgetLabel(widget)}`} aria-label={`Delete ${widgetLabel(widget)}`} onClick={() => deleteWidget(widget)}>
-                        <Trash2 size={13} />
-                      </button>
-                    ) : (
-                      <span className="settings-row-spacer" aria-hidden="true" />
-                    )}
-                  </SortableWidgetSettingRow>
-                ))}
-              </div>
-            </SortableContext>
-          </DndContext>
-        </section>
-      ) : null}
-
       <div className="dashboard-widget-grid">
         {enabledWidgets.length ? enabledWidgets.map(renderWidget) : (
           <section className="home-panel dashboard-widget wide">
@@ -835,9 +922,10 @@ function DashboardWidget({
   children: React.ReactNode;
 }) {
   const customTint = tint !== "system" ? tint : "";
+  const customWidget = !isSystemWidget(widget);
   return (
     <section
-      className={`home-panel dashboard-widget dashboard-widget-${widget.id} ${widget.size} ${customTint ? "tint-custom" : "tint-system"}`}
+      className={`home-panel dashboard-widget dashboard-widget-${widget.id} ${widget.size} ${customWidget ? "dashboard-widget-created" : "dashboard-widget-system"} ${customTint ? "tint-custom" : "tint-system"}`}
       style={customTint ? ({ "--widget-tint": customTint } as React.CSSProperties) : undefined}
     >
       <div className="section-header">
@@ -845,6 +933,7 @@ function DashboardWidget({
           <h2 className="dashboard-widget-title">
             <span>{title}</span>
             <span className="dashboard-widget-title-icon">{icon}</span>
+            {customWidget ? <span className="dashboard-widget-custom-marker">Custom</span> : null}
           </h2>
           <p className="helper-text">{description}</p>
         </div>
@@ -865,11 +954,13 @@ function EmptyWidget({ icon, text }: { icon: React.ReactNode; text: string }) {
 
 function EditableWidgetTitle({
   value,
-  fallback,
+  placeholder,
+  ariaLabel,
   onCommit,
 }: {
   value: string;
-  fallback: string;
+  placeholder: string;
+  ariaLabel: string;
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -882,34 +973,84 @@ function EditableWidgetTitle({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      commitTitle(draft, fallback, lastCommitted, onCommit);
-    }, 450);
+      commitTitle(draft, lastCommitted, onCommit);
+    }, 650);
     return () => window.clearTimeout(timer);
-  }, [draft, fallback, onCommit]);
+  }, [draft, onCommit]);
 
   return (
     <input
       className="widget-title-input"
-      aria-label={`Widget title: ${value}`}
+      aria-label={ariaLabel}
       value={draft}
+      placeholder={placeholder}
       onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => commitTitle(draft, fallback, lastCommitted, onCommit)}
+      onBlur={() => commitTitle(draft, lastCommitted, onCommit)}
     />
   );
 }
 
 function commitTitle(
   draft: string,
-  fallback: string,
   lastCommitted: React.MutableRefObject<string>,
   onCommit: (value: string) => void,
 ) {
-  const next = draft.trim() || fallback;
+  const next = draft.trim();
   if (next === lastCommitted.current) {
     return;
   }
   lastCommitted.current = next;
   onCommit(next);
+}
+
+function WidgetIcon({ iconId, size = 18 }: { iconId: WidgetIconId; size?: number }) {
+  const option = WIDGET_ICON_OPTIONS.find((item) => item.id === iconId) ?? WIDGET_ICON_OPTIONS[0];
+  const Icon = option.Icon;
+  return <Icon size={size} />;
+}
+
+function WidgetIconPicker({ value, onChange }: { value: WidgetIconId; onChange: (value: WidgetIconId) => void }) {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const current = WIDGET_ICON_OPTIONS.find((option) => option.id === value) ?? WIDGET_ICON_OPTIONS[0];
+  return (
+    <details ref={detailsRef} className="widget-icon-picker">
+      <summary className="widget-icon-trigger" aria-label={`Widget icon: ${current.label}`} title={`Widget icon: ${current.label}`}>
+        <WidgetIcon iconId={current.id} size={16} />
+      </summary>
+      <div className="widget-icon-menu" role="menu" aria-label="Widget icons">
+        {WIDGET_ICON_OPTIONS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={option.id === value ? "active" : ""}
+            aria-label={`Use ${option.label} icon`}
+            title={option.label}
+            onClick={() => {
+              onChange(option.id);
+              if (detailsRef.current) {
+                detailsRef.current.open = false;
+              }
+            }}
+          >
+            <WidgetIcon iconId={option.id} size={16} />
+          </button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function WidgetInfo({ label, description }: { label: string; description: string }) {
+  return (
+    <span className="widget-info">
+      <button type="button" className="widget-info-button" aria-label={`${label} widget info`}>
+        <Info size={14} />
+      </button>
+      <span className="widget-info-popover" role="tooltip">
+        {description}
+      </span>
+    </span>
+  );
 }
 
 function WidgetSizePicker({ value, onChange }: { value: DashboardWidgetSize; onChange: (value: DashboardWidgetSize) => void }) {
@@ -1044,6 +1185,17 @@ function normalizeWidgetTints(value: unknown): WidgetTintMap {
     Object.entries(value as Record<string, unknown>).filter(
       (entry): entry is [string, WidgetTint] => Boolean(entry[0]) && isWidgetTint(entry[1]),
     ),
+  );
+}
+
+function normalizeWidgetIcons(value: unknown): WidgetIconMap {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .map(([widgetId, iconId]) => [widgetId, typeof iconId === "string" && WIDGET_ICON_IDS.has(iconId) ? iconId : ""] as const)
+      .filter((entry): entry is [string, WidgetIconId] => Boolean(entry[0]) && WIDGET_ICON_IDS.has(entry[1])),
   );
 }
 
