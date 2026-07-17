@@ -39,6 +39,7 @@ import type {
   WorkspaceNotebook,
   WorkspaceSummary,
 } from "../../types/models";
+import { ColorPalettePicker } from "../../shared/components/ColorPalettePicker";
 import {
   assetReminderItems,
   formatBytes,
@@ -55,16 +56,7 @@ import {
   type DashboardWidgetSize,
 } from "./dashboardModel";
 
-type WidgetTint = "system" | "yellow" | "rose" | "sage" | "blue" | "lilac";
-
-const WIDGET_TINTS: Array<{ value: WidgetTint; label: string }> = [
-  { value: "system", label: "System" },
-  { value: "yellow", label: "Sticky yellow" },
-  { value: "rose", label: "Rose" },
-  { value: "sage", label: "Sage" },
-  { value: "blue", label: "Blue" },
-  { value: "lilac", label: "Lilac" },
-];
+type WidgetTint = "system" | `#${string}`;
 
 interface WorkspaceHomePaneProps {
   workspace: WorkspaceSummary;
@@ -670,17 +662,14 @@ export function WorkspaceHomePane({
                   <option value="normal">Normal</option>
                   <option value="wide">Wide</option>
                 </select>
-                <select
-                  className="mini-select widget-tint-select"
-                  value={widgetTint(widget.id)}
-                  onChange={(event) => patchWidgetTint(widget.id, event.target.value as WidgetTint)}
-                >
-                  {WIDGET_TINTS.map((tint) => (
-                    <option key={tint.value} value={tint.value}>
-                      {tint.label}
-                    </option>
-                  ))}
-                </select>
+                <ColorPalettePicker
+                  value={widgetTint(widget.id) === "system" ? undefined : widgetTint(widget.id)}
+                  label={`Widget color: ${widgetLabel(widget.id)}`}
+                  align="right"
+                  triggerClassName="widget-tint-trigger"
+                  onChange={(color) => patchWidgetTint(widget.id, color as WidgetTint)}
+                  onClear={() => patchWidgetTint(widget.id, "system")}
+                />
                 <button className="mini-icon-button" title="Move widget up" disabled={index === 0} onClick={() => moveWidget(widget.id, -1)}>
                   <ArrowUp size={13} />
                 </button>
@@ -719,8 +708,12 @@ function DashboardWidget({
   icon: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const customTint = tint !== "system" ? tint : "";
   return (
-    <section className={`home-panel dashboard-widget dashboard-widget-${widget.id} ${widget.size} tint-${tint}`}>
+    <section
+      className={`home-panel dashboard-widget dashboard-widget-${widget.id} ${widget.size} ${customTint ? "tint-custom" : "tint-system"}`}
+      style={customTint ? ({ "--widget-tint": customTint } as React.CSSProperties) : undefined}
+    >
       <div className="section-header">
         <div>
           <h2 className="dashboard-widget-title">
@@ -821,5 +814,9 @@ function isWidgetId(value: string): value is DashboardWidgetId {
 }
 
 function isWidgetTint(value: unknown): value is WidgetTint {
-  return typeof value === "string" && WIDGET_TINTS.some((tint) => tint.value === value);
+  return value === "system" || isHexColor(value);
+}
+
+function isHexColor(value: unknown): value is `#${string}` {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
 }

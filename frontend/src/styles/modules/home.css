@@ -330,36 +330,16 @@
   resize: vertical;
 }
 
-.dashboard-widget.tint-yellow {
+.dashboard-widget.tint-custom {
   background:
-    linear-gradient(180deg, rgba(255, 249, 202, 0.98), rgba(255, 241, 168, 0.94)),
-    rgba(255, 247, 190, 0.96);
-  border-color: rgba(191, 141, 57, 0.26);
-  box-shadow: 0 16px 34px rgba(126, 82, 54, 0.12);
+    linear-gradient(180deg, color-mix(in srgb, var(--widget-tint) 14%, #fffaf3), color-mix(in srgb, var(--widget-tint) 9%, #fff6e8)),
+    rgba(255, 251, 243, 0.92);
+  border-color: color-mix(in srgb, var(--widget-tint) 36%, rgba(126, 82, 54, 0.16));
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--widget-tint) 12%, transparent);
 }
 
-.dashboard-widget.tint-rose {
-  background: linear-gradient(180deg, rgba(255, 244, 240, 0.98), rgba(252, 229, 222, 0.94));
-  border-color: rgba(187, 94, 78, 0.24);
-}
-
-.dashboard-widget.tint-sage {
-  background: linear-gradient(180deg, rgba(247, 251, 235, 0.98), rgba(229, 241, 210, 0.94));
-  border-color: rgba(113, 140, 84, 0.22);
-}
-
-.dashboard-widget.tint-blue {
-  background: linear-gradient(180deg, rgba(241, 249, 252, 0.98), rgba(222, 238, 246, 0.94));
-  border-color: rgba(76, 133, 158, 0.22);
-}
-
-.dashboard-widget.tint-lilac {
-  background: linear-gradient(180deg, rgba(249, 245, 253, 0.98), rgba(236, 226, 247, 0.94));
-  border-color: rgba(130, 100, 166, 0.22);
-}
-
-.dashboard-widget.tint-yellow .quick-note-card textarea {
-  background: rgba(255, 253, 233, 0.58);
+.dashboard-widget.tint-custom .quick-note-card textarea {
+  background: color-mix(in srgb, var(--widget-tint) 7%, rgba(255, 253, 233, 0.58));
 }
 
 .quick-note-actions {
@@ -426,9 +406,15 @@
 
 .dashboard-widget-setting-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 132px 150px auto auto;
+  grid-template-columns: minmax(180px, 1fr) 132px 54px auto auto;
   gap: 8px;
   align-items: center;
+}
+
+.widget-tint-trigger {
+  width: 44px;
+  min-width: 44px;
+  padding-inline: 9px;
 }
 
 .dashboard-inline-form,
@@ -446,10 +432,10 @@
 
 .dashboard-task-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
-  padding: 6px 0;
+  grid-template-columns: 24px minmax(0, 1fr) 34px;
+  gap: 8px;
+  align-items: center;
+  padding: 3px 0;
 }
 
 .dashboard-task-row.done {
@@ -465,7 +451,6 @@
   width: 22px;
   height: 22px;
   min-width: 22px;
-  margin-top: 11px;
   border: 2px solid rgba(126, 82, 54, 0.42);
   border-radius: 999px;
   background: transparent;
@@ -482,7 +467,6 @@
 
 .dashboard-task-title {
   display: grid;
-  gap: 3px;
   min-width: 0;
 }
 
@@ -513,10 +497,9 @@
 }
 
 .dashboard-task-row > .mini-icon-button {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  margin-top: 4px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
 }
 
 .pinned-card-item {

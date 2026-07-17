@@ -89,6 +89,8 @@ frontend-*.log
 
 # Local tools and browser automation
 .playwright-browsers/
+.ms-playwright/
+frontend/.ms-playwright/
 test-results/
 tmp/
 tmp-qa/

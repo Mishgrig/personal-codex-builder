@@ -7,7 +7,8 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Bold, Copy, Highlighter, Italic, List, ListOrdered, Paintbrush, Pipette, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import { Bold, Copy, Highlighter, Italic, List, ListOrdered, Paintbrush, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import { ColorPalettePicker } from "../../shared/components/ColorPalettePicker";
 import { FontSize } from "./fontSizeExtension";
 
 interface RichTextEditorProps {
@@ -16,8 +17,6 @@ interface RichTextEditorProps {
 }
 
 const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
-const TEXT_COLORS = ["#000000", "#ffffff", "#f0efe6", "#ef4444", "#f97316", "#facc15", "#22c55e", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#d8a026"];
-const HIGHLIGHT_COLORS = ["#000000", "#ffffff", "#fef08a", "#fde68a", "#bfdbfe", "#bbf7d0", "#fecdd3", "#e9d5ff", "#d8a026", "#1d4ed8", "#7c3aed", "#15803d"];
 
 interface FormatSnapshot {
   block: "body" | "h1" | "h2" | "h3" | "bullet" | "ordered";
@@ -144,44 +143,22 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         <button className={editor.isActive("orderedList") ? "toolbar-button active" : "toolbar-button"} title="Numbered list" onClick={() => editor.chain().focus().toggleOrderedList().run()}>
           <ListOrdered size={15} />
         </button>
-        <div className="color-palette-group">
-          <span className="palette-label" title="Text color">A</span>
-          {TEXT_COLORS.map((color) => (
-            <button
-              key={color}
-              className="color-swatch-button"
-              title={`Text color ${color}`}
-              style={{ ["--swatch-color" as string]: color }}
-              onClick={() => editor.chain().focus().setColor(color).run()}
-            />
-          ))}
-        </div>
-        <label className="color-input-shell" title="Text color">
-          <input type="color" defaultValue="#f0efe6" onChange={(event) => editor.chain().focus().setColor(event.target.value).run()} />
-        </label>
-        <button
-          className="toolbar-button"
-          title="Pick text color from screen"
-          disabled={typeof window === "undefined" || !("EyeDropper" in window)}
-          onClick={() => void pickTextColor(editor)}
-        >
-          <Pipette size={15} />
-        </button>
-        <div className="color-palette-group">
-          <span className="palette-label" title="Highlight color"><Highlighter size={14} /></span>
-          {HIGHLIGHT_COLORS.map((color) => (
-            <button
-              key={color}
-              className="color-swatch-button highlight"
-              title={`Highlight color ${color}`}
-              style={{ ["--swatch-color" as string]: color }}
-              onClick={() => editor.chain().focus().setHighlight({ color }).run()}
-            />
-          ))}
-        </div>
-        <label className="color-input-shell highlight" title="Highlight color">
-          <input type="color" defaultValue="#d8a026" onChange={(event) => editor.chain().focus().setHighlight({ color: event.target.value }).run()} />
-        </label>
+        <ColorPalettePicker
+          value={(editor.getAttributes("textStyle") as { color?: string }).color}
+          label="Text color"
+          previewLabel="A"
+          align="left"
+          onChange={(color) => editor.chain().focus().setColor(color).run()}
+          onClear={() => editor.chain().focus().unsetColor().run()}
+        />
+        <ColorPalettePicker
+          value={(editor.getAttributes("highlight") as { color?: string }).color}
+          label="Highlight color"
+          icon={<Highlighter size={14} />}
+          align="left"
+          onChange={(color) => editor.chain().focus().setHighlight({ color }).run()}
+          onClear={() => editor.chain().focus().unsetHighlight().run()}
+        />
         <button
           className="toolbar-button"
           title="Clear format"
@@ -279,15 +256,6 @@ function applyCopiedFormat(
   if (snapshot.color) editor.chain().focus().setColor(snapshot.color).run();
   if (snapshot.highlight) editor.chain().focus().setHighlight({ color: snapshot.highlight }).run();
   setFontSize(snapshot.fontSize);
-}
-
-async function pickTextColor(editor: NonNullable<ReturnType<typeof useEditor>>) {
-  if (typeof window === "undefined" || !("EyeDropper" in window)) {
-    return;
-  }
-  const eyeDropper = new (window as Window & { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper();
-  const result = await eyeDropper.open();
-  editor.chain().focus().setColor(result.sRGBHex).run();
 }
 
 function decorateCollapsibleHeadings(root: HTMLElement) {
