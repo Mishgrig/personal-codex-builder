@@ -39,6 +39,7 @@ class CardSchemaBase(BaseModel):
     description: str = ""
     icon: str = "*"
     field_order: list[str] = Field(default_factory=list)
+    layout_json: dict[str, Any] = Field(default_factory=dict)
     is_active: bool = True
 
 

@@ -25,7 +25,16 @@ interface AtlasPaneProps {
   showCover: boolean;
   groupByCategory: boolean;
   schemas: CardSchema[];
+  roomFilters?: Array<{
+    label: string;
+    value: string;
+    options: string[];
+    onChange: (value: string) => void;
+  }>;
   detailPanePosition: DetailPanePosition;
+  title?: string;
+  description?: string;
+  addCardLabel?: string;
   onSelectCard: (cardId: number) => void;
   onReorderGroup: (orderedIds: number[]) => void;
   onViewModeChange: (mode: ViewMode) => void;
@@ -36,6 +45,8 @@ interface AtlasPaneProps {
   onCreateCard: () => void;
   onOpenCardTypeStudio: () => void;
   onExportSelectedCardTypeStructure: (schemaId: string) => void;
+  onExportSelectedMarkdown?: () => void;
+  onImportMarkdown?: (file: File) => void;
   onDetailPanePositionChange: (value: DetailPanePosition) => void;
   onOpenTableView: () => void;
 }
@@ -52,7 +63,11 @@ export function AtlasPane({
   showCover,
   groupByCategory,
   schemas,
+  roomFilters = [],
   detailPanePosition,
+  title = "Wiki",
+  description,
+  addCardLabel = "Add card",
   onSelectCard,
   onReorderGroup,
   onViewModeChange,
@@ -63,6 +78,8 @@ export function AtlasPane({
   onCreateCard,
   onOpenCardTypeStudio,
   onExportSelectedCardTypeStructure,
+  onExportSelectedMarkdown,
+  onImportMarkdown,
   onDetailPanePositionChange,
   onOpenTableView,
 }: AtlasPaneProps) {
@@ -75,17 +92,17 @@ export function AtlasPane({
     <section className="atlas-pane">
       <div className="pane-header">
         <div>
-          <h2>Atlas</h2>
-          <p>Total {totalCards} · Shown {cards.length}</p>
+          <h2>{title}</h2>
+          <p>{description ? `${description} · ` : ""}Total {totalCards} · Shown {cards.length}</p>
         </div>
         <div className="pane-toolbar">
+          <button className="secondary-button atlas-add-card-button" title="Create a new Wiki card" onClick={onCreateCard}>
+            <Plus size={14} />
+            {addCardLabel}
+          </button>
           <PopoverMenu icon={<Wrench size={14} />} label="Card tools">
             <div className="popover-action-grid">
-              <button className="secondary-button" onClick={onCreateCard}>
-                <Plus size={14} />
-                Add card
-              </button>
-              <button className="secondary-button" onClick={onOpenCardTypeStudio}>
+              <button className="secondary-button" title="Open Card Type Studio to edit card structures" onClick={onOpenCardTypeStudio}>
                 <BookPlus size={14} />
                 Card Type Studio
               </button>
@@ -98,12 +115,42 @@ export function AtlasPane({
                 <BookPlus size={14} />
                 Export Card Type structure
               </button>
-              <button className="secondary-button" onClick={onOpenTableView}>
+              {onExportSelectedMarkdown ? (
+                <button
+                  className="secondary-button"
+                  disabled={!selectedCard}
+                  title={selectedCard ? "Export selected Wiki card as Markdown" : "Select a card first"}
+                  onClick={onExportSelectedMarkdown}
+                >
+                  <BookPlus size={14} />
+                  Export Markdown
+                </button>
+              ) : null}
+              {onImportMarkdown ? (
+                <label className="secondary-button" title="Import a Markdown file as a Wiki card">
+                  <BookPlus size={14} />
+                  Import Markdown
+                  <input
+                    type="file"
+                    accept=".md,.markdown,text/markdown,text/plain"
+                    hidden
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      if (file) {
+                        onImportMarkdown(file);
+                      }
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              ) : null}
+              <button className="secondary-button" title="Open the spreadsheet-style table view" onClick={onOpenTableView}>
                 <LayoutGrid size={14} />
                 Open Table View
               </button>
               <button
                 className={`secondary-button ${detailPanePosition === "right" ? "active" : ""}`}
+                title="Show selected card to the right of the results"
                 onClick={() => onDetailPanePositionChange("right")}
               >
                 <PanelRight size={14} />
@@ -111,6 +158,7 @@ export function AtlasPane({
               </button>
               <button
                 className={`secondary-button ${detailPanePosition === "bottom" ? "active" : ""}`}
+                title="Show selected card below the results"
                 onClick={() => onDetailPanePositionChange("bottom")}
               >
                 <PanelBottom size={14} />
@@ -141,11 +189,11 @@ export function AtlasPane({
               </div>
               <label className="tiny-toggle">
                 <input type="checkbox" checked={showSummary} onChange={(event) => onShowSummaryChange(event.target.checked)} />
-                <span>Show summary</span>
+                <span>Summary</span>
               </label>
               <label className="tiny-toggle">
                 <input type="checkbox" checked={showCover} onChange={(event) => onShowCoverChange(event.target.checked)} />
-                <span>Show cover</span>
+                <span>Cover</span>
               </label>
               <label className="tiny-toggle">
                 <input
@@ -176,6 +224,24 @@ export function AtlasPane({
           </PopoverMenu>
         </div>
       </div>
+
+      {roomFilters.length ? (
+        <div className="room-filter-bar" aria-label={`${title} filters`}>
+          {roomFilters.map((filter) => (
+            <label className="room-filter" key={filter.label}>
+              <span>{filter.label}</span>
+              <select className="themed-select" value={filter.value} onChange={(event) => filter.onChange(event.target.value)}>
+                <option value="">All</option>
+                {filter.options.map((option) => (
+                  <option value={option} key={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      ) : null}
 
       <div className={`atlas-groups ${viewMode}`}>
         {groups.map((group) => (

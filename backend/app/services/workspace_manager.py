@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -48,6 +50,7 @@ from app.services.integrity_service import (
     repair_asset_health,
     repair_workspace_health,
 )
+from app.services.product_defaults import merge_product_ui_preferences
 from app.services.seed_service import seed_workspace
 from app.storage.app_index import app_index_session, create_app_index_schema
 from app.storage.catalog import load_catalog
@@ -63,6 +66,28 @@ DEFAULT_TAXONOMY_LABELS = {
     "layer": "Layer",
 }
 
+PORTABILITY_REQUIRED_TABLES = [
+    "workspace_settings",
+    "card_schemas",
+    "cards",
+    "cards_registry",
+    "card_type_definitions",
+    "card_type_fields",
+    "card_relations",
+    "card_sources",
+    "assets",
+    "notebook_asset_links",
+    "plot_events",
+    "plot_event_card_links",
+    "plot_event_links",
+    "plot_event_layouts",
+    "boards",
+    "board_items",
+    "board_edges",
+    "character_groups",
+    "character_graph_node_layouts",
+]
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -72,6 +97,42 @@ def _parse_datetime(value: str | None) -> datetime:
     if not value:
         return _now()
     return datetime.fromisoformat(value)
+
+
+def _portability_check(
+    key: str,
+    category: str,
+    ok: bool,
+    ok_message: str,
+    issue_message: str,
+    details: dict,
+    *,
+    error: bool = False,
+) -> dict:
+    return {
+        "key": key,
+        "category": category,
+        "status": "ok" if ok else ("error" if error else "warning"),
+        "message": ok_message if ok else issue_message,
+        "details": details,
+    }
+
+
+def _portability_categories(checks: list[dict]) -> dict[str, dict]:
+    categories: dict[str, dict] = {}
+    for check in checks:
+        category = categories.setdefault(
+            check["category"],
+            {"key": check["category"], "status": "ok", "issue_count": 0, "checks": []},
+        )
+        category["checks"].append(check)
+        if check["status"] != "ok":
+            category["issue_count"] += 1
+            if check["status"] == "error":
+                category["status"] = "error"
+            elif category["status"] == "ok":
+                category["status"] = "warning"
+    return categories
 
 
 def _default_notebook_item() -> dict:
@@ -88,7 +149,7 @@ def _default_notebook_item() -> dict:
 def _normalize_notebook_items(notebook_payload: dict | None) -> list[dict]:
     notebook_payload = notebook_payload or {}
     raw_items = notebook_payload.get("items")
-    if isinstance(raw_items, list) and raw_items:
+    if isinstance(raw_items, list):
         items: list[dict] = []
         for index, item in enumerate(raw_items):
             if not isinstance(item, dict):
@@ -102,8 +163,7 @@ def _normalize_notebook_items(notebook_payload: dict | None) -> list[dict]:
             }
             normalized.update(item)
             items.append(normalized)
-        if items:
-            return sorted(items, key=lambda entry: int(entry.get("sort_order", 0)))
+        return sorted(items, key=lambda entry: int(entry.get("sort_order", 0)))
 
     return [
         {
@@ -112,6 +172,40 @@ def _normalize_notebook_items(notebook_payload: dict | None) -> list[dict]:
             "body_text": notebook_payload.get("body_text", ""),
         }
     ]
+
+
+def _notebook_item_text(item: dict) -> str:
+    item_type = str(item.get("type") or "")
+    if item_type == "plain_text":
+        return str(item.get("text") or item.get("body_text") or "").strip()
+    if item_type == "table":
+        columns = item.get("columns") or []
+        rows = item.get("rows") or []
+        column_text = " | ".join(str(column) for column in columns)
+        row_text = "\n".join(" | ".join(str(cell) for cell in row) for row in rows if isinstance(row, list))
+        return "\n".join(part for part in [str(item.get("title") or "").strip(), column_text, row_text] if part).strip()
+    if item_type == "link":
+        return "\n".join(str(item.get(key) or "").strip() for key in ["label", "href", "note"] if item.get(key)).strip()
+    if item_type == "card_reference":
+        card_id = f"Card #{item.get('card_id')}" if item.get("card_id") else ""
+        return "\n".join(part for part in [card_id, str(item.get("note") or "").strip()] if part).strip()
+    if item_type in {"asset_reference", "image", "file"}:
+        asset_id = f"Asset {item.get('asset_id')}" if item.get("asset_id") else ""
+        return "\n".join(part for part in [asset_id, str(item.get("note") or "").strip()] if part).strip()
+    return str(item.get("body_text") or item.get("text") or item.get("note") or "").strip()
+
+
+def _notebook_item_asset_ids(item: dict) -> list[str]:
+    asset_ids: list[str] = []
+    raw_asset_ids = item.get("asset_ids")
+    if isinstance(raw_asset_ids, list):
+        asset_ids.extend(str(asset_id) for asset_id in raw_asset_ids if asset_id)
+    if item.get("asset_id"):
+        asset_ids.append(str(item["asset_id"]))
+    for value in [item.get("text"), item.get("body_text"), item.get("note")]:
+        if isinstance(value, str):
+            asset_ids.extend(re.findall(r"asset:([A-Za-z0-9_-]+)", value))
+    return list(dict.fromkeys(asset_ids))
 
 
 class WorkspaceManager:
@@ -273,6 +367,7 @@ class WorkspaceManager:
         db_path = resolve_workspace_db_path(slug)
         if not db_path.exists():
             raise NotFoundError("Workspace was not found.", code="WORKSPACE_NOT_FOUND")
+        create_workspace_schema(db_path)
         return get_session_factory(db_path)()
 
     def update_workspace(self, session: Session, workspace_slug: str, payload: WorkspaceUpdate) -> WorkspaceSetting:
@@ -372,6 +467,96 @@ class WorkspaceManager:
         self._require_workspace(slug)
         payload = create_workspace_export(slug)
         return {**payload, "created_at": _parse_datetime(payload["created_at"])}
+
+    def workspace_portability(self, slug: str) -> dict:
+        self.bootstrap()
+        self._require_workspace(slug)
+        db_path = resolve_workspace_db_path(slug)
+        create_workspace_schema(db_path)
+        metadata_path = workspace_metadata_path(slug)
+        legacy_metadata = legacy_workspace_metadata_path(slug)
+        files_dir = workspace_files_dir(slug)
+        exports_dir = workspace_exports_dir(slug)
+        backups = list_workspace_backups(slug)
+        with sqlite3.connect(db_path) as connection:
+            present_tables = sorted(
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+                ).fetchall()
+            )
+        missing_tables = sorted(table for table in PORTABILITY_REQUIRED_TABLES if table not in present_tables)
+        asset_file_count = sum(1 for path in files_dir.rglob("*") if path.is_file()) if files_dir.exists() else 0
+        export_count = sum(1 for path in exports_dir.glob("*.workspace.zip") if path.is_file()) if exports_dir.exists() else 0
+        checks = [
+            _portability_check(
+                "portable_database_file",
+                "archive",
+                db_path.exists(),
+                "Workspace SQLite database is present.",
+                "Workspace SQLite database is missing.",
+                {"path": str(db_path)},
+                error=True,
+            ),
+            _portability_check(
+                "portable_metadata_file",
+                "archive",
+                metadata_path.exists() or legacy_metadata.exists(),
+                "Workspace metadata is present.",
+                "Workspace metadata is missing.",
+                {"workspace_json": metadata_path.exists(), "legacy_metadata": legacy_metadata.exists()},
+                error=True,
+            ),
+            _portability_check(
+                "portable_required_tables",
+                "database",
+                not missing_tables,
+                "All durable feature tables are present.",
+                f"Missing {len(missing_tables)} durable feature table(s).",
+                {"missing_tables": missing_tables},
+                error=True,
+            ),
+            _portability_check(
+                "portable_files_directory",
+                "files",
+                files_dir.exists(),
+                "Workspace files directory is present.",
+                "Workspace files directory is missing; archives can still work if there are no assets.",
+                {"asset_file_count": asset_file_count},
+            ),
+            _portability_check(
+                "portable_backup_coverage",
+                "backups",
+                bool(backups),
+                "At least one backup exists.",
+                "No backups exist yet; create a backup before risky sync/import work.",
+                {"backup_count": len(backups)},
+            ),
+        ]
+        categories = _portability_categories(checks)
+        issue_count = sum(1 for check in checks if check["status"] != "ok")
+        status = "ready"
+        if any(check["status"] == "error" for check in checks):
+            status = "blocked"
+        elif issue_count:
+            status = "warning"
+        return {
+            "workspace_slug": slug,
+            "checked_at": _now(),
+            "status": status,
+            "issue_count": issue_count,
+            "required_tables": PORTABILITY_REQUIRED_TABLES,
+            "present_tables": present_tables,
+            "missing_tables": missing_tables,
+            "db_included": db_path.exists(),
+            "metadata_included": metadata_path.exists() or legacy_metadata.exists(),
+            "files_dir_present": files_dir.exists(),
+            "asset_file_count": asset_file_count,
+            "backup_count": len(backups),
+            "export_count": export_count,
+            "checks": checks,
+            "categories": categories,
+        }
 
     def import_workspace_archive(self, archive_path: Path, *, name_override: str | None = None) -> dict:
         self.bootstrap()
@@ -478,39 +663,28 @@ class WorkspaceManager:
             settings = session.get(WorkspaceSetting, 1)
             if not settings:
                 raise NotFoundError("Workspace settings were not found.", code="WORKSPACE_SETTINGS_NOT_FOUND")
-            normalized_items = _normalize_notebook_items({"items": items} if items else None)
-            primary_rich_text = next(
-                (item for item in normalized_items if item.get("type") == "rich_text"),
-                None,
-            )
-            if primary_rich_text is None:
-                primary_rich_text = {
-                    **_default_notebook_item(),
-                    "body_json": body_json,
-                    "body_text": body_text,
-                }
-                normalized_items.insert(0, primary_rich_text)
-            else:
+            normalized_items = _normalize_notebook_items({"items": items} if items is not None else None)
+            primary_rich_text = next((item for item in normalized_items if item.get("type") == "rich_text"), None)
+            if primary_rich_text is not None:
                 primary_rich_text["body_json"] = body_json
-                primary_rich_text["body_text"] = body_text
+                primary_rich_text["body_text"] = primary_rich_text.get("body_text", "")
+            aggregated_body_text = "\n\n".join(text for text in (_notebook_item_text(item) for item in normalized_items) if text)
             settings.notebook_json = {
                 "items": normalized_items,
                 "body_json": body_json,
-                "body_text": body_text,
+                "body_text": aggregated_body_text or body_text,
             }
             session.execute(select(NotebookAssetLink))
             session.query(NotebookAssetLink).delete()
             for item in normalized_items:
                 item_type = str(item.get("type") or "")
-                referenced_asset_ids: list[str] = []
-                if item_type in {"asset_reference", "image", "file"} and item.get("asset_id"):
-                    referenced_asset_ids.append(str(item["asset_id"]))
-                for asset_id in referenced_asset_ids:
+                asset_role = item_type if item_type in {"asset_reference", "image", "file"} else "file"
+                for asset_id in _notebook_item_asset_ids(item):
                     if session.get(Asset, asset_id):
                         session.add(
                             NotebookAssetLink(
                                 item_id=str(item.get("id")),
-                                item_type=item_type,
+                                item_type=asset_role,
                                 asset_id=asset_id,
                             )
                         )
@@ -810,6 +984,7 @@ class WorkspaceManager:
             "created_at": record.created_at,
             "updated_at": record.updated_at,
             "taxonomy_labels": setting.taxonomy_labels if setting else DEFAULT_TAXONOMY_LABELS,
+            "ui_preferences": merge_product_ui_preferences(setting.ui_preferences if setting else {}),
         }
 
     def _write_workspace_metadata(self, record: AppWorkspace) -> None:

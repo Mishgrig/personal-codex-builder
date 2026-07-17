@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Pin, Plus, Trash2 } from "lucide-react";
 import { api } from "../../api/client";
 import { queryClient } from "../../app/queryClient";
 import { AutoResizeTextarea } from "../../shared/components/AutoResizeTextarea";
@@ -24,9 +24,12 @@ interface DetailPaneProps {
   taxonomyTerms: TaxonomyTerm[];
   schemas: CardSchema[];
   allCards: CardListItem[];
+  pinned: boolean;
   onRefresh: () => Promise<void>;
+  onTogglePinned: (cardId: number) => void;
   onDeleteCurrent: () => Promise<void>;
   onOpenCard: (cardId: number) => void;
+  onOpenCategoryManager: () => void;
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -38,9 +41,12 @@ export function DetailPane({
   taxonomyTerms,
   schemas,
   allCards,
+  pinned,
   onRefresh,
+  onTogglePinned,
   onDeleteCurrent,
   onOpenCard,
+  onOpenCategoryManager,
 }: DetailPaneProps) {
   const [draft, setDraft] = useState<CardDetail | null>(card);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -84,13 +90,15 @@ export function DetailPane({
 
   const schema = draft?.schema_id ? schemas.find((item) => item.id === draft.schema_id) ?? null : null;
   const coverUrl = draft?.cover_url ?? draft?.gallery[0]?.url ?? null;
+  const mentionCandidates = allCards.filter((item) => item.id !== draft?.id);
+  const provenance = readProvenance(draft?.dynamic_fields?._provenance);
 
   if (!draft || !workspaceSlug) {
     return (
       <section className="detail-pane empty">
         <div className="empty-state">
-          <h2>No card selected</h2>
-          <p>Choose a card on the left, or create a new one to begin your atlas.</p>
+          <h2>No entity selected</h2>
+          <p>Choose an entity on the left, or create a new one to begin your Wiki.</p>
         </div>
       </section>
     );
@@ -114,27 +122,41 @@ export function DetailPane({
     void queryClient.invalidateQueries({ queryKey: ["cards", workspaceSlug] });
   }
 
-  const searchExcerpt = buildExcerpt(draft.body_text, query);
+  const searchMatches = buildSearchMatches(draft, query);
+  const mentionedCards = findMentionedCards(draft.body_text, allCards, draft.id);
 
   return (
     <section className="detail-pane">
       <div className="pane-header detail-header">
         <div>
-          <h2>Card Detail</h2>
+          <h2>Entity</h2>
           <p>{saveLabel(saveState, draft.updated_at, draft.created_at)}</p>
         </div>
-        <IconButton danger title="Delete card" onClick={() => setDeleteConfirmOpen(true)}>
-          <Trash2 size={16} />
-        </IconButton>
+        <div className="detail-header-actions">
+          <IconButton title={pinned ? "Unpin entity from Home" : "Pin entity to Home"} onClick={() => onTogglePinned(draft.id)}>
+            <Pin size={16} fill={pinned ? "currentColor" : "none"} />
+          </IconButton>
+          <IconButton danger title="Archive entity" onClick={() => setDeleteConfirmOpen(true)}>
+            <Trash2 size={16} />
+          </IconButton>
+        </div>
       </div>
 
       <article className="detail-card">
+        {provenance ? (
+          <div className="provenance-banner">
+            <strong>{provenance.mode === "snapshot" ? "Snapshot copy" : "Linked canon"}</strong>
+            <span>
+              From {provenance.source_workspace_name || provenance.source_workspace_slug}: {provenance.source_card_title}
+            </span>
+          </div>
+        ) : null}
         <div className="detail-topline">
           <div className="title-stack">
             <input
               className="title-input"
               value={draft.title}
-              placeholder="Untitled card"
+              placeholder="Untitled entity"
               onChange={(event) => setDraft((current) => (current ? { ...current, title: event.target.value } : current))}
             />
             <AutoResizeTextarea
@@ -157,7 +179,7 @@ export function DetailPane({
                 </select>
               </label>
               <label className="field-stack">
-                <span>Card Type</span>
+                <span>Entity Type</span>
                 <select
                   className="themed-select"
                   value={draft.schema_id ?? ""}
@@ -175,7 +197,7 @@ export function DetailPane({
                     );
                   }}
                 >
-                  <option value="">No card type</option>
+                  <option value="">No entity type</option>
                   {schemas.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.label}
@@ -210,6 +232,9 @@ export function DetailPane({
         <div className="tag-zone">
           <div className="section-header">
             <h3>Categories & tags</h3>
+            <IconButton title="Manage categories and tags" aria-label="Manage categories and tags" onClick={onOpenCategoryManager}>
+              <Plus size={14} />
+            </IconButton>
           </div>
           {["domain", "type", "subtype", "layer"].map((category) => (
             <div className="taxonomy-editor" key={category}>
@@ -290,16 +315,75 @@ export function DetailPane({
           <AttachmentsSection workspaceSlug={workspaceSlug} card={draft} onUpdated={applyRemoteCard} />
         </CollapsibleSection>
 
-        {query && searchExcerpt ? (
+        {query && searchMatches.length ? (
           <section className="detail-section">
             <div className="section-header">
-              <h3>Search Mentions</h3>
+              <h3>Search matches</h3>
             </div>
-            <p className="search-preview">{highlightText(searchExcerpt, query)}</p>
+            <div className="search-preview-list">
+              {searchMatches.map((match) => (
+                <p className="search-preview" key={match.label}>
+                  <strong>{match.label}:</strong> {highlightText(match.text, query)}
+                </p>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {mentionedCards.length ? (
+          <section className="detail-section">
+            <div className="section-header">
+              <h3>Mentions</h3>
+            </div>
+            <div className="mention-chip-row">
+              {mentionedCards.map((mentionedCard) => (
+                <button className="mention-chip" key={mentionedCard.id} onClick={() => onOpenCard(mentionedCard.id)}>
+                  @{mentionedCard.title}
+                  <span className="mention-preview">
+                    <strong>{mentionedCard.title}</strong>
+                    <small>{roomLabelForCard(mentionedCard)} · {mentionedCard.schema_label || "entity"}</small>
+                    <em>{mentionedCard.summary || "No summary yet."}</em>
+                  </span>
+                </button>
+              ))}
+            </div>
           </section>
         ) : null}
 
         <CollapsibleSection title="Body">
+          <div className="mention-tools">
+            <label className="field-stack compact-field">
+              <span>Insert @ mention</span>
+              <select
+                className="themed-select"
+                value=""
+                onChange={(event) => {
+                  const targetId = Number(event.target.value);
+                  const target = mentionCandidates.find((item) => item.id === targetId);
+                  if (!target) {
+                    return;
+                  }
+                  setDraft((current) =>
+                    current
+                      ? {
+                          ...current,
+                          body_json: appendMentionToDoc(current.body_json, target.title),
+                          body_text: appendMentionToText(current.body_text, target.title),
+                        }
+                      : current,
+                  );
+                  event.currentTarget.value = "";
+                }}
+              >
+                <option value="">Choose a Wiki, Character or Location entity…</option>
+                {mentionCandidates.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {roomLabelForCard(item)} · {item.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <Suspense fallback={<div className="editor-shell loading">Preparing editor…</div>}>
             <RichTextEditor
               value={draft.body_json}
@@ -341,9 +425,9 @@ export function DetailPane({
       ) : null}
       {deleteConfirmOpen ? (
         <ConfirmDialog
-          title="Archive card"
-          description="The card will be hidden from normal views but stay recoverable in the local database."
-          confirmLabel="Archive card"
+          title="Archive entity"
+          description="The entity will be hidden from normal views but stay recoverable in the local world."
+          confirmLabel="Archive entity"
           danger
           onCancel={() => setDeleteConfirmOpen(false)}
           onConfirm={() => {
@@ -483,8 +567,19 @@ function saveLabel(saveState: SaveState, updatedAt?: string, createdAt?: string)
   return `Created ${formatDateTime(createdAt)}`;
 }
 
-function buildExcerpt(bodyText: string, query: string) {
-  if (!query.trim() || !bodyText.trim()) {
+function buildSearchMatches(card: CardDetail, query: string) {
+  const matches: Array<{ label: string; text: string }> = [];
+  const title = buildExcerpt(card.title, query, 0, 180);
+  const summary = buildExcerpt(card.summary, query, 40, 220);
+  const body = buildExcerpt(card.body_text, query, 80, 180);
+  if (title) matches.push({ label: "Title", text: title });
+  if (summary) matches.push({ label: "Summary", text: summary });
+  if (body) matches.push({ label: "Body", text: body });
+  return matches;
+}
+
+function buildExcerpt(bodyText: string, query: string, before = 80, after = 180) {
+  if (!query.trim() || !bodyText?.trim()) {
     return "";
   }
   const lowerBody = bodyText.toLowerCase();
@@ -493,9 +588,60 @@ function buildExcerpt(bodyText: string, query: string) {
   if (matchIndex < 0) {
     return "";
   }
-  const start = Math.max(0, matchIndex - 80);
-  const end = Math.min(bodyText.length, matchIndex + 180);
+  const start = Math.max(0, matchIndex - before);
+  const end = Math.min(bodyText.length, matchIndex + after);
   return `${start > 0 ? "…" : ""}${bodyText.slice(start, end)}${end < bodyText.length ? "…" : ""}`;
+}
+
+function findMentionedCards(bodyText: string, allCards: CardListItem[], currentCardId: number) {
+  if (!bodyText.trim()) {
+    return [];
+  }
+  const normalizedBody = bodyText.toLowerCase();
+  return allCards
+    .filter((card) => card.id !== currentCardId)
+    .filter((card) => normalizedBody.includes(`@${card.title}`.toLowerCase()))
+    .slice(0, 12);
+}
+
+function appendMentionToText(bodyText: string, title: string) {
+  const mention = `@${title}`;
+  const trimmed = bodyText.trim();
+  return trimmed ? `${trimmed}\n${mention}` : mention;
+}
+
+function appendMentionToDoc(bodyJson: Record<string, unknown>, title: string) {
+  const content = Array.isArray(bodyJson.content) ? bodyJson.content : [];
+  return {
+    ...bodyJson,
+    type: "doc",
+    content: [
+      ...content,
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: `@${title}` }],
+      },
+    ],
+  };
+}
+
+function roomLabelForCard(card: CardListItem) {
+  if (card.schema_id === "character" || card.schema_id === "npc") return "Character";
+  if (card.schema_id === "location") return "Location";
+  return "Wiki";
+}
+
+function readProvenance(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  return {
+    mode: String(raw.mode ?? "snapshot"),
+    source_workspace_slug: String(raw.source_workspace_slug ?? ""),
+    source_workspace_name: String(raw.source_workspace_name ?? ""),
+    source_card_title: String(raw.source_card_title ?? "Shared card"),
+  };
 }
 
 function capitalize(value: string) {

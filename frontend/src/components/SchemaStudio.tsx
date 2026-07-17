@@ -2,18 +2,17 @@ import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from
 import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Eye, GripVertical, Plus, Save, Trash2 } from "lucide-react";
+import { Eye, GripVertical, Info, Plus, Save, Trash2 } from "lucide-react";
 import { api } from "../api/client";
 import { ConfirmDialog } from "../shared/components/ConfirmDialog";
 import { ToggleSwitch } from "../shared/components/ToggleSwitch";
 import { IconButton } from "../shared/components/IconButton";
 import { PopoverMenu } from "../shared/components/PopoverMenu";
-import type { CardSchema, SchemaField, TaxonomyTerm } from "../types/models";
+import type { CardSchema, SchemaField } from "../types/models";
 
 interface SchemaStudioProps {
   workspaceSlug: string;
   schemas: CardSchema[];
-  terms: TaxonomyTerm[];
   onClose: () => void;
   onSaved: () => Promise<void>;
 }
@@ -57,22 +56,38 @@ const emptySchema = (): CardSchema => ({
   description: "",
   icon: "✦",
   field_order: [],
+  layout_json: defaultLayoutJson(),
   is_active: true,
   fields: [],
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 });
 
-export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }: SchemaStudioProps) {
+const BUILT_IN_SECTIONS = [
+  { id: "slug", label: "Slug" },
+  { id: "status", label: "Status" },
+  { id: "card_type", label: "Card Type" },
+  { id: "categories", label: "Categories & tags" },
+  { id: "dynamic_fields", label: "Dynamic fields" },
+  { id: "body", label: "Body" },
+  { id: "sources", label: "Sources" },
+  { id: "relations", label: "Relations" },
+  { id: "gallery", label: "Gallery" },
+  { id: "attachments", label: "Attachments" },
+] as const;
+
+function defaultLayoutJson() {
+  return {
+    section_order: BUILT_IN_SECTIONS.map((section) => section.id),
+    hidden_sections: [],
+  };
+}
+
+export function SchemaStudio({ workspaceSlug, schemas, onClose, onSaved }: SchemaStudioProps) {
   const [selectedSchemaId, setSelectedSchemaId] = useState<string>(schemas[0]?.id ?? emptySchema().id);
   const [schemaDraft, setSchemaDraft] = useState<CardSchema>(schemas[0] ?? emptySchema());
   const [advancedMode, setAdvancedMode] = useState(false);
-  const [termDraft, setTermDraft] = useState<Partial<TaxonomyTerm>>({
-    category: "domain",
-    slug: "",
-    label: "",
-    description: "",
-  });
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   useEffect(() => {
@@ -84,10 +99,12 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
   }, [schemaDraft.id, schemas, selectedSchemaId]);
 
   const liveTableName = useMemo(() => `card_type_${safeSlug(schemaDraft.id || schemaDraft.label, "generic")}`, [schemaDraft.id, schemaDraft.label]);
+  const layout = normalizeLayout(schemaDraft.layout_json);
 
   async function saveSchema() {
     const normalized = {
       ...schemaDraft,
+      layout_json: layout,
       field_order: schemaDraft.fields.map((field) => field.field_id).filter(Boolean),
       fields: schemaDraft.fields.map((field, index) => ({ ...field, sort_order: index })),
     };
@@ -95,23 +112,17 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
     await onSaved();
   }
 
-  async function saveTerm() {
-    if (!termDraft.category || !termDraft.slug || !termDraft.label) {
-      return;
-    }
-    if (termDraft.id) {
-      await api.updateTaxonomyTerm(workspaceSlug, termDraft.id, termDraft);
-    } else {
-      await api.createTaxonomyTerm(workspaceSlug, {
-        category: termDraft.category,
-        slug: termDraft.slug,
-        label: termDraft.label,
-        description: termDraft.description ?? "",
-        parent_id: termDraft.parent_id ?? null,
-        sort_order: termDraft.sort_order ?? 0,
-      });
-    }
-    setTermDraft({ category: "domain", slug: "", label: "", description: "" });
+  async function deactivateCardType() {
+    const normalized = {
+      ...schemaDraft,
+      is_active: false,
+      layout_json: layout,
+      field_order: schemaDraft.fields.map((field) => field.field_id).filter(Boolean),
+      fields: schemaDraft.fields.map((field, index) => ({ ...field, sort_order: index })),
+    };
+    await api.putSchema(workspaceSlug, normalized);
+    setSchemaDraft(normalized);
+    setConfirmDeactivate(false);
     await onSaved();
   }
 
@@ -129,6 +140,46 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
       ...current,
       fields: arrayMove(current.fields, oldIndex, newIndex),
     }));
+  }
+
+  function moveSection(sectionId: string, direction: -1 | 1) {
+    setSchemaDraft((current) => {
+      const currentLayout = normalizeLayout(current.layout_json);
+      const index = currentLayout.section_order.indexOf(sectionId);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= currentLayout.section_order.length) {
+        return current;
+      }
+      const section_order = [...currentLayout.section_order];
+      const [moved] = section_order.splice(index, 1);
+      section_order.splice(nextIndex, 0, moved);
+      return {
+        ...current,
+        layout_json: {
+          ...currentLayout,
+          section_order,
+        },
+      };
+    });
+  }
+
+  function setSectionHidden(sectionId: string, hidden: boolean) {
+    setSchemaDraft((current) => {
+      const currentLayout = normalizeLayout(current.layout_json);
+      const hiddenSet = new Set(currentLayout.hidden_sections);
+      if (hidden) {
+        hiddenSet.add(sectionId);
+      } else {
+        hiddenSet.delete(sectionId);
+      }
+      return {
+        ...current,
+        layout_json: {
+          ...currentLayout,
+          hidden_sections: Array.from(hiddenSet),
+        },
+      };
+    });
   }
 
   return (
@@ -181,6 +232,7 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
             <div className="stack-form compact-top-gap">
               <label className="field-stack">
                 <span>Name</span>
+                <InfoHint text="Visible name users see when choosing this card type." />
                 <input
                   className="themed-input"
                   value={schemaDraft.label}
@@ -190,6 +242,7 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
               </label>
               <label className="field-stack">
                 <span>Slug</span>
+                <InfoHint text="Stable technical id. Changing it can affect imports, exports and table bridges." />
                 <input
                   className="themed-input"
                   value={schemaDraft.id}
@@ -243,6 +296,7 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
 
               <div className="section-header">
                 <h3>Fields</h3>
+                <InfoHint text="Fields can be reordered or hidden without deleting existing card data." />
                 <button
                   className="secondary-button small"
                   onClick={() =>
@@ -279,10 +333,55 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
                 </SortableContext>
               </DndContext>
 
+              <div className="section-header">
+                <h3>Card sections</h3>
+                <InfoHint text="Reorder or hide built-in card sections without deleting stored data." />
+              </div>
+              <div className="section-layout-list">
+                {layout.section_order.map((sectionId, index) => {
+                  const section = BUILT_IN_SECTIONS.find((item) => item.id === sectionId);
+                  if (!section) {
+                    return null;
+                  }
+                  const hidden = layout.hidden_sections.includes(sectionId);
+                  return (
+                    <div key={section.id} className={`section-layout-row ${hidden ? "muted-row" : ""}`}>
+                      <span>{section.label}</span>
+                      <div className="row-actions">
+                        <button className="icon-button" title="Move section up" disabled={index === 0} onClick={() => moveSection(section.id, -1)}>
+                          ↑
+                        </button>
+                        <button
+                          className="icon-button"
+                          title="Move section down"
+                          disabled={index === layout.section_order.length - 1}
+                          onClick={() => moveSection(section.id, 1)}
+                        >
+                          ↓
+                        </button>
+                        <label className="tiny-toggle">
+                          <input checked={!hidden} type="checkbox" onChange={(event) => setSectionHidden(section.id, !event.target.checked)} />
+                          <span>Show</span>
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
               <div className="row-actions">
                 <button className="primary-button" onClick={() => void saveSchema()}>
                   <Save size={14} />
                   Save card type
+                </button>
+                <button
+                  className="secondary-button danger"
+                  title="Safely deactivate this card type without deleting stored card data"
+                  disabled={!schemaDraft.is_active}
+                  onClick={() => setConfirmDeactivate(true)}
+                >
+                  <Trash2 size={14} />
+                  Deactivate card type
                 </button>
               </div>
             </div>
@@ -338,89 +437,30 @@ export function SchemaStudio({ workspaceSlug, schemas, terms, onClose, onSaved }
                   <h3>Layout sections</h3>
                 </div>
                 <div className="asset-usage-list">
-                  {["Title", "Summary", "Status", "Card Type", "Categories & tags", "Dynamic fields", "Body", "Sources", "Relations", "Gallery", "Attachments"].map((label) => (
-                    <span key={label} className="tag-chip">
-                      {label}
+                  {layout.section_order.map((sectionId) => (
+                    <span key={sectionId} className={`tag-chip ${layout.hidden_sections.includes(sectionId) ? "muted-row" : ""}`}>
+                      {BUILT_IN_SECTIONS.find((section) => section.id === sectionId)?.label ?? sectionId}
                     </span>
                   ))}
                 </div>
               </div>
-
-              <div className="section-header compact-top-gap">
-                <h3>Categories</h3>
-              </div>
-              <div className="taxonomy-groups">
-                {["domain", "type", "subtype", "layer"].map((category) => (
-                  <div key={category} className="taxonomy-group">
-                    <strong>{category}</strong>
-                    {terms
-                      .filter((term) => term.category === category)
-                      .map((term) => (
-                        <button
-                          className="taxonomy-pill"
-                          key={term.id}
-                          onClick={() => setTermDraft(term)}
-                        >
-                          {term.label}
-                        </button>
-                      ))}
-                  </div>
-                ))}
-              </div>
-
-              <div className="stack-form compact-top-gap">
-                <select
-                  className="themed-select"
-                  value={termDraft.category ?? "domain"}
-                  onChange={(event) => setTermDraft((current) => ({ ...current, category: event.target.value }))}
-                >
-                  <option value="domain">Domain</option>
-                  <option value="type">Type</option>
-                  <option value="subtype">Subtype</option>
-                  <option value="layer">Layer</option>
-                </select>
-                <input
-                  className="themed-input"
-                  value={termDraft.label ?? ""}
-                  onChange={(event) => setTermDraft((current) => ({ ...current, label: event.target.value }))}
-                  placeholder="Name"
-                />
-                <input
-                  className="themed-input"
-                  value={termDraft.slug ?? ""}
-                  onChange={(event) => setTermDraft((current) => ({ ...current, slug: event.target.value }))}
-                  placeholder="Slug"
-                />
-                <textarea
-                  className="themed-textarea"
-                  rows={3}
-                  value={termDraft.description ?? ""}
-                  onChange={(event) => setTermDraft((current) => ({ ...current, description: event.target.value }))}
-                  placeholder="Description"
-                />
-                <div className="row-actions">
-                  <button className="primary-button" onClick={() => void saveTerm()}>
-                    <Save size={14} />
-                    Save category
-                  </button>
-                  {termDraft.id ? (
-                    <button
-                      className="secondary-button danger"
-                      onClick={async () => {
-                        await api.deleteTaxonomyTerm(workspaceSlug, termDraft.id!);
-                        setTermDraft({ category: "domain", slug: "", label: "", description: "" });
-                        await onSaved();
-                      }}
-                    >
-                      <Trash2 size={14} />
-                      Delete category
-                    </button>
-                  ) : null}
-                </div>
-              </div>
+              <p className="helper-text compact-top-gap">
+                Categories and tags are managed from Wiki filters with the Manage category action, so card type editing stays focused on structure.
+              </p>
             </div>
           </section>
         </div>
+
+        {confirmDeactivate ? (
+          <ConfirmDialog
+            title="Deactivate card type?"
+            description={`"${schemaDraft.label || schemaDraft.id}" will be marked inactive. Existing cards and stored field data are kept for export, import and future restore.`}
+            confirmLabel="Deactivate"
+            danger
+            onConfirm={() => void deactivateCardType()}
+            onCancel={() => setConfirmDeactivate(false)}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -457,12 +497,12 @@ function FieldCard({
           <div className="row-actions">
             <PopoverMenu icon={<Eye size={14} />} label="Field behavior">
               <ToggleSwitch checked={field.show_in_card} label="Show in card" onChange={(checked) => onChange({ show_in_card: checked })} />
-              <ToggleSwitch checked={field.show_in_list} label="Show in Atlas / lists" onChange={(checked) => onChange({ show_in_list: checked })} />
+              <ToggleSwitch checked={field.show_in_list} label="Show in Wiki / lists" onChange={(checked) => onChange({ show_in_list: checked })} />
               <ToggleSwitch checked={field.show_in_filters} label="Show in filters" onChange={(checked) => onChange({ show_in_filters: checked })} />
               <ToggleSwitch checked={field.is_active} label="Active field" onChange={(checked) => onChange({ is_active: checked })} />
               {advancedMode ? (
                 <p className="helper-text no-top-margin">
-                  This studio currently edits the schema bridge fields directly, so only the toggles shown here persist as separate flags.
+                  This studio currently edits the card type bridge fields directly, so only the toggles shown here persist as separate flags.
                 </p>
               ) : null}
             </PopoverMenu>
@@ -475,6 +515,7 @@ function FieldCard({
         <div className="field-row">
           <label className="field-stack">
             <span>Name</span>
+            <InfoHint text="Human-readable label shown on cards and imports." />
             <input
               className="themed-input"
               value={field.label}
@@ -484,6 +525,7 @@ function FieldCard({
           </label>
           <label className="field-stack">
             <span>Field slug</span>
+            <InfoHint text="Stable field id used by storage, import/export and future migrations." />
             <input
               className="themed-input"
               value={field.field_id}
@@ -609,6 +651,31 @@ function FieldCard({
       ) : null}
     </>
   );
+}
+
+function InfoHint({ text }: { text: string }) {
+  return (
+    <span className="info-hint" title={text} aria-label={text}>
+      <Info size={12} />
+    </span>
+  );
+}
+
+function normalizeLayout(layoutJson: Record<string, unknown> | undefined) {
+  const knownIds: string[] = BUILT_IN_SECTIONS.map((section) => section.id);
+  const rawOrder = Array.isArray(layoutJson?.section_order) ? layoutJson.section_order : [];
+  const section_order = [
+    ...rawOrder.filter((item): item is string => typeof item === "string" && knownIds.includes(item)),
+    ...knownIds.filter((id) => !rawOrder.includes(id)),
+  ];
+  const hidden_sections = Array.isArray(layoutJson?.hidden_sections)
+    ? layoutJson.hidden_sections.filter((item): item is string => typeof item === "string" && knownIds.includes(item))
+    : [];
+  return {
+    ...(layoutJson ?? {}),
+    section_order,
+    hidden_sections,
+  };
 }
 
 function fieldKey(field: SchemaField, index: number) {

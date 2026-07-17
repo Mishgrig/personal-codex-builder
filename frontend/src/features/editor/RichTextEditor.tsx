@@ -7,7 +7,7 @@ import TextStyle from "@tiptap/extension-text-style";
 import Color from "@tiptap/extension-color";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Bold, Copy, Italic, List, ListOrdered, Paintbrush, Pipette, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
+import { Bold, Copy, Highlighter, Italic, List, ListOrdered, Paintbrush, Pipette, Redo2, Strikethrough, Underline as UnderlineIcon, Undo2 } from "lucide-react";
 import { FontSize } from "./fontSizeExtension";
 
 interface RichTextEditorProps {
@@ -16,8 +16,8 @@ interface RichTextEditorProps {
 }
 
 const FONT_STEPS = [8, 9, 10, 11, 12, 13, 14, 15, 16];
-const TEXT_COLORS = ["#f0efe6", "#d8a026", "#7dd3fc", "#fca5a5", "#86efac", "#c4b5fd"];
-const HIGHLIGHT_COLORS = ["#d8a026", "#1d4ed8", "#7c3aed", "#15803d", "#b45309", "#be123c"];
+const TEXT_COLORS = ["#000000", "#ffffff", "#f0efe6", "#ef4444", "#f97316", "#facc15", "#22c55e", "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#d8a026"];
+const HIGHLIGHT_COLORS = ["#000000", "#ffffff", "#fef08a", "#fde68a", "#bfdbfe", "#bbf7d0", "#fecdd3", "#e9d5ff", "#d8a026", "#1d4ed8", "#7c3aed", "#15803d"];
 
 interface FormatSnapshot {
   block: "body" | "h1" | "h2" | "h3" | "bullet" | "ordered";
@@ -64,6 +64,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
     },
     onUpdate: ({ editor: current }) => {
       onChange(current.getJSON() as Record<string, unknown>);
+      window.setTimeout(() => decorateCollapsibleHeadings(current.view.dom), 0);
     },
   });
 
@@ -76,6 +77,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
     if (current !== incoming) {
       editor.commands.setContent(value, false);
     }
+    decorateCollapsibleHeadings(editor.view.dom);
   }, [editor, value]);
 
   if (!editor) {
@@ -105,17 +107,6 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
           <button className="icon-button" title="Smaller text" onClick={() => applyFont(editor, fontSize, setFontSize, -1)}>
             -
           </button>
-          <input
-            className="font-size-input"
-            value={fontSize}
-            onChange={(event) => {
-              setFontSize(event.target.value);
-              editor.chain().focus().setFontSize(`${event.target.value}px`).run();
-            }}
-          />
-          <button className="icon-button" title="Larger text" onClick={() => applyFont(editor, fontSize, setFontSize, 1)}>
-            +
-          </button>
           <select
             className="toolbar-select compact"
             value={fontSize}
@@ -130,6 +121,9 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
               </option>
             ))}
           </select>
+          <button className="icon-button" title="Larger text" onClick={() => applyFont(editor, fontSize, setFontSize, 1)}>
+            +
+          </button>
         </div>
 
         <button className={editor.isActive("bold") ? "toolbar-button active" : "toolbar-button"} title="Bold" onClick={() => editor.chain().focus().toggleBold().run()}>
@@ -151,6 +145,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
           <ListOrdered size={15} />
         </button>
         <div className="color-palette-group">
+          <span className="palette-label" title="Text color">A</span>
           {TEXT_COLORS.map((color) => (
             <button
               key={color}
@@ -173,6 +168,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
           <Pipette size={15} />
         </button>
         <div className="color-palette-group">
+          <span className="palette-label" title="Highlight color"><Highlighter size={14} /></span>
           {HIGHLIGHT_COLORS.map((color) => (
             <button
               key={color}
@@ -189,7 +185,10 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
         <button
           className="toolbar-button"
           title="Clear format"
-          onClick={() => editor.chain().focus().unsetHighlight().unsetColor().unsetAllMarks().run()}
+          onClick={() => {
+            setFontSize("14");
+            editor.chain().focus().unsetHighlight().unsetColor().unsetFontSize().unsetAllMarks().run();
+          }}
         >
           Clear format
         </button>
@@ -221,7 +220,7 @@ export function RichTextEditor({ value, onChange }: RichTextEditorProps) {
 }
 
 function applyFont(editor: NonNullable<ReturnType<typeof useEditor>>, fontSize: string, setFontSize: (value: string) => void, delta: number) {
-  const next = String(Math.max(8, Number(fontSize || "14") + delta));
+  const next = String(Math.min(16, Math.max(8, Number(fontSize || "14") + delta)));
   setFontSize(next);
   editor.chain().focus().setFontSize(`${next}px`).run();
 }
@@ -289,4 +288,46 @@ async function pickTextColor(editor: NonNullable<ReturnType<typeof useEditor>>) 
   const eyeDropper = new (window as Window & { EyeDropper: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper();
   const result = await eyeDropper.open();
   editor.chain().focus().setColor(result.sRGBHex).run();
+}
+
+function decorateCollapsibleHeadings(root: HTMLElement) {
+  const headings = Array.from(root.querySelectorAll<HTMLHeadingElement>("h1, h2, h3"));
+  headings.forEach((heading, index) => {
+    heading.dataset.headingIndex = String(index);
+    heading.classList.add("collapsible-heading");
+    heading.title = "Click to collapse or expand this section";
+    heading.onclick = (event) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      heading.dataset.collapsed = heading.dataset.collapsed === "true" ? "false" : "true";
+      applyHeadingVisibility(root);
+    };
+  });
+  applyHeadingVisibility(root);
+}
+
+function applyHeadingVisibility(root: HTMLElement) {
+  const children = Array.from(root.children) as HTMLElement[];
+  children.forEach((child) => {
+    if (!/^H[1-3]$/.test(child.tagName)) {
+      child.hidden = false;
+    }
+  });
+
+  children.forEach((child, index) => {
+    if (!/^H[1-3]$/.test(child.tagName) || child.dataset.collapsed !== "true") {
+      child.classList.toggle("is-collapsed", child.dataset.collapsed === "true");
+      return;
+    }
+    child.classList.add("is-collapsed");
+    const level = Number(child.tagName.slice(1));
+    for (let nextIndex = index + 1; nextIndex < children.length; nextIndex += 1) {
+      const next = children[nextIndex];
+      if (/^H[1-3]$/.test(next.tagName) && Number(next.tagName.slice(1)) <= level) {
+        break;
+      }
+      next.hidden = true;
+    }
+  });
 }

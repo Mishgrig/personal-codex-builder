@@ -42,11 +42,17 @@ export function AssetLibraryPanel({
       <div className="asset-library-toolbar">
         <input
           className="themed-input"
+          aria-label="Search asset id or filename"
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
           placeholder="Search asset id or filename"
         />
-        <select className="themed-select" value={assetType} onChange={(event) => onAssetTypeChange(event.target.value)}>
+        <select
+          className="themed-select"
+          aria-label="Filter assets by type"
+          value={assetType}
+          onChange={(event) => onAssetTypeChange(event.target.value)}
+        >
           <option value="">All types</option>
           <option value="images">Images</option>
           <option value="documents">Documents</option>
@@ -81,10 +87,23 @@ export function AssetLibraryPanel({
                   <p>No active links yet.</p>
                 )}
                 <div className="action-strip asset-row-actions">
-                  <a className="icon-button" href={asset.url} target="_blank" rel="noreferrer" title="Open asset">
+                  <a
+                    className="icon-button"
+                    href={asset.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title="Open asset"
+                    aria-label={`Open ${asset.original_filename}`}
+                  >
                     <ExternalLink size={14} />
                   </a>
-                  <a className="icon-button" href={asset.url} download={asset.original_filename} title="Download asset">
+                  <a
+                    className="icon-button"
+                    href={asset.url}
+                    download={asset.original_filename}
+                    title="Download asset"
+                    aria-label={`Download ${asset.original_filename}`}
+                  >
                     <Download size={14} />
                   </a>
                   <button
@@ -105,6 +124,7 @@ export function AssetLibraryPanel({
                     <>
                       <select
                         className="mini-select"
+                        aria-label={`Choose source for ${asset.original_filename}`}
                         value={selectedSourceId}
                         onChange={(event) => setSelectedSourceId(event.target.value ? Number(event.target.value) : "")}
                       >

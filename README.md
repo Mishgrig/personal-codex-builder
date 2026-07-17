@@ -1,13 +1,18 @@
 # Personal Codex Builder
 
-Personal Codex Builder is a local-first single-user atlas for personal knowledge bases, notes, lore archives, and structured codices.
+Personal Codex Builder is a local-first workspace for tabletop RPG game masters, RPG creators, writers, and worldbuilding authors. It is a private offline desk for preparing a World, connecting its canon, building Chapters and Scenes, and running playable scenes from the same portable Workspace database.
+
+The current product direction comes from the Notion project hub and uses two primary modes:
+
+- `Prep` for creating, reading, updating, and deleting world material.
+- `Play` for running prepared scenes at the table.
 
 ## What is included
 
 - FastAPI backend with per-workspace SQLite databases
 - React + TypeScript + Vite frontend
 - Explicit workspace management with local backups, health checks, import/export, archive support, and safety backups before destructive flows
-- Atlas and Table View screens for browsing and editing card data
+- Wiki/Atlas, Characters, Locations, Chapters/Scenes, Plots, Boards, Character Graphs, and Play prototype surfaces
 - Card Type Studio, category/tag filters, centralized Asset Library, workspace Notebook, relations, and rich text editing
 - Local runtime storage under `data/` that stays on the machine
 
@@ -124,8 +129,14 @@ GitHub contains source code and documentation only.
 
 ## Development notes
 
+- Notion is the current product source of truth for the NRI/RPG/worldbuilding direction.
+- TTRPG/worldbuilding is now core product direction, not an optional late mode.
+- Public product language should move from generic `cards/databases` toward `Worlds`, `Entities`, `Chapters`, and `Scenes`, while preserving existing internal compatibility until focused migrations are planned.
+- The product has two primary modes: `Prep` and `Play`; there is no separate `Review` mode in the current roadmap.
+- The current target is one complete modular prototype, not separate MVP/beta/later product versions.
 - The global workspace registry now lives in the local app index database.
 - Workspace business data stays isolated inside each workspace database.
 - Existing local workspaces are migrated forward with additive SQLite schema repair on startup.
 - `backend/alembic` remains a migration scaffold for future schema evolution.
+- See [plans/2026-07-09-master-product-roadmap.md](./plans/2026-07-09-master-product-roadmap.md) for the current product roadmap.
 - See [docs/AI_REVIEW_CONTEXT.md](./docs/AI_REVIEW_CONTEXT.md) for future ChatGPT and GitHub review context.

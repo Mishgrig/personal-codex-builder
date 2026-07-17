@@ -1,0 +1,55 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  color: var(--text);
+  background: var(--bg);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+h1,
+.title-input {
+  font-size: var(--font-xl);
+}
+
+h2,
+.pane-header h2,
+.modal-card h2 {
+  font-size: var(--font-lg);
+}
+
+small,
+.helper-text,
+.inline-message {
+  font-size: var(--font-sm);
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+a {
+  color: inherit;
+}

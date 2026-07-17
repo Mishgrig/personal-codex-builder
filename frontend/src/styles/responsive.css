@@ -1,0 +1,128 @@
+@media (max-width: 1200px) {
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-manager-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-widget.compact {
+    grid-column: span 6;
+  }
+
+  .dashboard-widget.normal {
+    grid-column: span 12;
+  }
+
+  .plots-workspace {
+    grid-template-columns: 240px minmax(420px, 1fr);
+  }
+
+  .board-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .character-graph-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .plots-detail-panel {
+    grid-column: 1 / -1;
+  }
+
+  .notebook-column {
+    min-width: 220px;
+  }
+}
+
+@media (max-width: 760px) {
+  .workspace-main-layout,
+  .atlas-layout {
+    flex-direction: column;
+  }
+
+  .notebook-column,
+  .atlas-column,
+  .detail-column {
+    width: 100% !important;
+  }
+
+  .drag-divider {
+    display: none;
+  }
+
+  .detail-topline,
+  .detail-meta-grid,
+  .metadata-grid,
+  .meta-grid,
+  .schema-studio .studio-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .asset-library-row {
+    grid-template-columns: 1fr;
+  }
+
+  .category-manager-layout,
+  .category-term-row {
+    grid-template-columns: 1fr;
+  }
+
+  .category-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-hero,
+  .home-grid,
+  .home-columns,
+  .dashboard-widget-grid,
+  .dashboard-widget-setting-row,
+  .dashboard-goal-form,
+  .dashboard-task-row,
+  .dashboard-inline-form,
+  .dashboard-stat-grid,
+  .dashboard-shortcut-grid,
+  .plots-workspace,
+  .plot-list-card header,
+  .detail-grid.two,
+  .plot-link-form {
+    grid-template-columns: 1fr;
+  }
+
+  .plots-header,
+  .plots-toolbar,
+  .board-header,
+  .board-toolbar,
+  .board-board-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .plots-detail-panel {
+    grid-column: auto;
+  }
+
+  .plot-link-form input:nth-of-type(2),
+  .plot-link-form button {
+    grid-column: auto;
+  }
+
+  .dashboard-widget.compact,
+  .dashboard-widget.normal,
+  .dashboard-widget.wide {
+    grid-column: 1;
+  }
+
+  .home-hero {
+    padding: 18px;
+  }
+}

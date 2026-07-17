@@ -2,11 +2,18 @@ import { useRef } from "react";
 import {
   ChevronDown,
   Filter,
+  Globe2,
   LayoutPanelTop,
   LayoutTemplate,
+  Images,
+  Home,
+  MapPin,
+  Milestone,
   Settings2,
   Search,
+  Swords,
   Table2,
+  UserRound,
   X,
 } from "lucide-react";
 import type { SearchFilters, TaxonomyTerm, WorkspaceSummary } from "../../types/models";
@@ -27,7 +34,7 @@ interface WorkspaceControlsProps {
   onSelectWorkspace: (slug: string) => void;
   onToggleWorkspaceManager: () => void;
   workspaceManagerOpen: boolean;
-  onOpenSchemaStudio: () => void;
+  onManageCategory: (category: string) => void;
   onFiltersChange: (filters: SearchFilters) => void;
 }
 
@@ -44,7 +51,7 @@ export function WorkspaceControls({
   onSelectWorkspace,
   onToggleWorkspaceManager,
   workspaceManagerOpen,
-  onOpenSchemaStudio,
+  onManageCategory,
   onFiltersChange,
 }: WorkspaceControlsProps) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -58,62 +65,111 @@ export function WorkspaceControls({
 
   return (
     <>
-      <header className="topbar">
-        <div className="database-cluster">
-          <label className="field-label">Database</label>
-          <div className="database-row">
-            <PopoverMenu
-              icon={
-                <div className="dropdown-trigger-content">
-                  <span>{activeWorkspace?.name ?? "Choose database"}</span>
-                  <ChevronDown size={14} />
-                </div>
-              }
-              label="Database"
-              align="left"
-              triggerClassName="dropdown-trigger wide"
-            >
-              <div className="dropdown-list">
-                {!workspaces.length ? <span className="dropdown-empty">No active workspace</span> : null}
-                {workspaces.map((workspace) => (
-                  <button
-                    key={workspace.slug}
-                    className={`dropdown-item ${workspace.slug === activeWorkspace?.slug ? "active" : ""}`}
-                    onClick={() => onSelectWorkspace(workspace.slug)}
-                  >
-                    <strong>{workspace.name}</strong>
-                    <span>{workspace.card_count} cards</span>
-                  </button>
-                ))}
-                <button
-                  className={`dropdown-item dropdown-item-manage ${workspaceManagerOpen ? "active" : ""}`}
-                  onClick={onToggleWorkspaceManager}
-                >
-                  <Settings2 size={14} />
-                  <span>Manage databases</span>
-                </button>
-              </div>
-            </PopoverMenu>
-          </div>
-          <small className="helper-text">
-            {activeWorkspace ? "Choose an active local database or open database management." : "Choose or create a database"}
-            {archivedCount ? ` · ${archivedCount} archived` : ""}
-          </small>
+      <PopoverMenu
+        icon={<Globe2 size={20} />}
+        label="World"
+        align="left"
+        className="world-rail-menu"
+        panelClassName="world-rail-panel"
+        triggerClassName="world-rail-button"
+      >
+        <div className="world-rail-current">
+          <span>Active world</span>
+          <strong>{activeWorkspace?.name ?? "Choose world"}</strong>
+          {activeWorkspace ? (
+            <small>
+              {activeWorkspace.theme}
+              {archivedCount ? ` · ${archivedCount} archived` : ""}
+            </small>
+          ) : (
+            <small>Choose or create a local world.</small>
+          )}
         </div>
-
+        <div className="dropdown-list">
+          {!workspaces.length ? <span className="dropdown-empty">No active world</span> : null}
+          {workspaces.map((workspace) => (
+            <button
+              key={workspace.slug}
+              className={`dropdown-item ${workspace.slug === activeWorkspace?.slug ? "active" : ""}`}
+              title={`Switch to ${workspace.name}`}
+              onClick={() => onSelectWorkspace(workspace.slug)}
+            >
+              <strong>{workspace.name}</strong>
+              <span>{workspace.theme}</span>
+            </button>
+          ))}
+          <button
+            className={`dropdown-item dropdown-item-manage ${workspaceManagerOpen ? "active" : ""}`}
+            title="Create, rename, duplicate, delete, archive, import, export, back up, and reorder worlds"
+            onClick={onToggleWorkspaceManager}
+          >
+            <Settings2 size={14} />
+            <span>Manage worlds</span>
+          </button>
+        </div>
+      </PopoverMenu>
+      <header className="topbar">
         <div className="search-cluster">
           <div className="segmented-control screen-switcher">
             <button
+              className={activeScreen === "home" ? "active" : ""}
+              title="Open world home"
+              onClick={() => onScreenChange("home")}
+            >
+              <Home size={14} />
+              Home
+            </button>
+            <button
+              className={activeScreen === "chapters" || activeScreen === "campaign" ? "active" : ""}
+              title="Open Chapters and prepared scenes"
+              onClick={() => onScreenChange("chapters")}
+            >
+              <Swords size={14} />
+              Chapters
+            </button>
+            <button
               className={activeScreen === "atlas" ? "active" : ""}
-              title="Atlas"
+              title="Open the Wiki entity workspace"
               onClick={() => onScreenChange("atlas")}
             >
               <LayoutPanelTop size={14} />
-              Atlas
+              Wiki
+            </button>
+            <button
+              className={activeScreen === "characters" ? "active" : ""}
+              title="Open Characters"
+              onClick={() => onScreenChange("characters")}
+            >
+              <UserRound size={14} />
+              Characters
+            </button>
+            <button
+              className={activeScreen === "locations" ? "active" : ""}
+              title="Open Locations"
+              onClick={() => onScreenChange("locations")}
+            >
+              <MapPin size={14} />
+              Locations
+            </button>
+            <button
+              className={activeScreen === "plots" ? "active" : ""}
+              title="Open Plots and Chronology"
+              onClick={() => onScreenChange("plots")}
+            >
+              <Milestone size={14} />
+              Plots
+            </button>
+            <button
+              className={activeScreen === "board" ? "active" : ""}
+              title="Open Boards and Moodboards"
+              onClick={() => onScreenChange("board")}
+            >
+              <Images size={14} />
+              Boards
             </button>
             <button
               className={activeScreen === "table" ? "active" : ""}
-              title="Table View"
+              title="Open the spreadsheet-style entity type table"
               onClick={() => onScreenChange("table")}
             >
               <Table2 size={14} />
@@ -143,35 +199,35 @@ export function WorkspaceControls({
             ) : null}
           </div>
           <div className="filter-menu-row">
-            <PopoverMenu icon={<Filter size={16} />} label="Filters">
+            <PopoverMenu icon={<Filter size={16} />} label="Filters" className="filter-popover" panelClassName="filter-popover-panel">
               <div className="dropdown-list compact">
                 <FilterMenu
                   label={labels.domain}
                   value={filters.domain}
                   options={groupedTerms.domain}
                   onChange={(value) => onFiltersChange({ ...filters, domain: value })}
-                  onManage={onOpenSchemaStudio}
+                  onManage={() => onManageCategory("domain")}
                 />
                 <FilterMenu
                   label={labels.type}
                   value={filters.type}
                   options={groupedTerms.type}
                   onChange={(value) => onFiltersChange({ ...filters, type: value })}
-                  onManage={onOpenSchemaStudio}
+                  onManage={() => onManageCategory("type")}
                 />
                 <FilterMenu
                   label={labels.subtype}
                   value={filters.subtype}
                   options={groupedTerms.subtype}
                   onChange={(value) => onFiltersChange({ ...filters, subtype: value })}
-                  onManage={onOpenSchemaStudio}
+                  onManage={() => onManageCategory("subtype")}
                 />
                 <FilterMenu
                   label={labels.layer}
                   value={filters.layer}
                   options={groupedTerms.layer}
                   onChange={(value) => onFiltersChange({ ...filters, layer: value })}
-                  onManage={onOpenSchemaStudio}
+                  onManage={() => onManageCategory("layer")}
                 />
               </div>
             </PopoverMenu>
@@ -204,6 +260,9 @@ function FilterMenu({
         </div>
       }
       label={label}
+      align="left"
+      className="filter-submenu"
+      panelClassName="filter-submenu-panel"
       triggerClassName="dropdown-trigger"
     >
       <div className="dropdown-list">

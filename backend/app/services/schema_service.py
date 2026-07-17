@@ -129,6 +129,7 @@ def _upsert_card_type(session: Session, payload: CardSchemaCreate) -> CardTypeDe
     definition.icon = payload.icon
     definition.is_active = payload.is_active
     definition.layout_json = {
+        **(payload.layout_json or {}),
         "field_order": payload.field_order or [field.field_id for field in payload.fields],
         "mode": "card-type-studio",
     }
@@ -182,14 +183,24 @@ def _schema_query():
 
 
 def list_schemas(session: Session) -> list[CardSchema]:
-    return list(session.execute(_schema_query()).scalars())
+    schemas = list(session.execute(_schema_query()).scalars())
+    definitions = {
+        definition.slug: definition
+        for definition in session.execute(select(CardTypeDefinition)).scalars().all()
+    }
+    for schema in schemas:
+        definition = definitions.get(_safe_slug(schema.id, fallback="general"))
+        schema.layout_json = definition.layout_json if definition else {}
+    return schemas
 
 
 def upsert_schema(session: Session, payload: CardSchemaCreate) -> CardSchema:
     _upsert_legacy_schema(session, payload)
-    _upsert_card_type(session, payload)
+    definition = _upsert_card_type(session, payload)
     session.commit()
-    return session.execute(_schema_query().where(CardSchema.id == payload.id)).scalar_one()
+    schema = session.execute(_schema_query().where(CardSchema.id == payload.id)).scalar_one()
+    schema.layout_json = definition.layout_json or {}
+    return schema
 
 
 def _card_type_query():

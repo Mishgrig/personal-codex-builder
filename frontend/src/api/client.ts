@@ -1,9 +1,17 @@
 import type {
   ActionStatus,
   AppInfo,
+  Board,
+  BoardCreatePayload,
+  BoardItemCreatePayload,
+  BoardItemUpdatePayload,
+  BoardList,
+  BoardUpdatePayload,
   CardCreatePayload,
   CardDetail,
   CardSchema,
+  CharacterGraph,
+  CharacterGroup,
   CardTypeDefinition,
   CardTypeImportPreview,
   CardTypeImportResult,
@@ -12,23 +20,44 @@ import type {
   CardTypeTable,
   CardSource,
   CardUpdatePayload,
+  Chapter,
+  ChapterCreatePayload,
+  ChapterList,
+  ChapterUpdatePayload,
+  DiceShortcutCreatePayload,
+  DiceShortcutUpdatePayload,
+  PlotEvent,
+  PlotEventCreatePayload,
+  PlotEventList,
+  PlotEventUpdatePayload,
+  ReferenceCreatePayload,
   SearchFilters,
   SearchResult,
+  SceneCreatePayload,
+  SceneTokenCreatePayload,
+  SceneTokenUpdatePayload,
+  SceneUpdatePayload,
   TaxonomyTerm,
   WorkspaceAssetLibrary,
   WorkspaceBackup,
   WorkspaceCreatePayload,
   WorkspaceAssetHealth,
+  WorkspaceAsset,
   WorkspaceExport,
   WorkspaceDataExport,
   WorkspaceHealth,
   WorkspaceNotebook,
+  WorkspacePortability,
   WorkspaceRestoreResult,
   WorkspaceRepairResult,
   WorkspaceSummary,
+  WorkspaceShareMode,
+  WorkspaceShareRegistry,
+  WorkspaceShareResult,
 } from "../types/models";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://127.0.0.1:8000/api";
+const API_ORIGIN = API_BASE.replace(/\/api\/?$/, "");
 
 interface RequestOptions {
   method?: string;
@@ -53,7 +82,22 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   if (response.status === 204) {
     return undefined as T;
   }
-  return (payload?.data ?? payload) as T;
+  return normalizeMediaUrls(payload?.data ?? payload) as T;
+}
+
+function normalizeMediaUrls(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value.startsWith("/media/") ? `${API_ORIGIN}${value}` : value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeMediaUrls(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, normalizeMediaUrls(item)]),
+    );
+  }
+  return value;
 }
 
 export const api = {
@@ -92,7 +136,7 @@ export const api = {
     request<ActionStatus>(`/workspaces/${workspaceSlug}`, { method: "DELETE" }),
   updateWorkspace: (
     workspaceSlug: string,
-    payload: Partial<WorkspaceCreatePayload> & { taxonomy_labels?: Record<string, string> },
+    payload: Partial<WorkspaceCreatePayload> & { taxonomy_labels?: Record<string, string>; ui_preferences?: Record<string, unknown> },
   ) =>
     request<WorkspaceSummary>(`/workspaces/${workspaceSlug}`, {
       method: "PATCH",
@@ -130,6 +174,21 @@ export const api = {
     request<WorkspaceExport>(`/workspaces/${workspaceSlug}/export`, {
       method: "POST",
     }),
+  getWorkspaceSharing: (workspaceSlug: string) =>
+    request<WorkspaceShareRegistry>(`/workspaces/${workspaceSlug}/sharing`),
+  shareWorkspaceEntity: (
+    workspaceSlug: string,
+    payload: {
+      target_workspace_slug: string;
+      entity_type: "card";
+      entity_id: number;
+      mode: WorkspaceShareMode;
+    },
+  ) =>
+    request<WorkspaceShareResult>(`/workspaces/${workspaceSlug}/sharing`, {
+      method: "POST",
+      json: payload,
+    }),
   exportWorkspaceData: (
     workspaceSlug: string,
     format: "json" | "csv" = "json",
@@ -144,6 +203,8 @@ export const api = {
   },
   getWorkspaceHealth: (workspaceSlug: string) =>
     request<WorkspaceHealth>(`/workspaces/${workspaceSlug}/health`),
+  getWorkspacePortability: (workspaceSlug: string) =>
+    request<WorkspacePortability>(`/workspaces/${workspaceSlug}/portability`),
   repairWorkspaceHealth: (workspaceSlug: string, action: string) =>
     request<WorkspaceRepairResult>(`/workspaces/${workspaceSlug}/health/repair`, {
       method: "POST",
@@ -162,6 +223,14 @@ export const api = {
     if (assetType) params.set("asset_type", assetType);
     const query = params.toString();
     return request<WorkspaceAssetLibrary>(`/workspaces/${workspaceSlug}/assets${query ? `?${query}` : ""}`);
+  },
+  uploadWorkspaceAsset: (workspaceSlug: string, file: File) => {
+    const form = new FormData();
+    form.append("upload", file);
+    return request<WorkspaceAsset>(`/workspaces/${workspaceSlug}/assets/upload`, {
+      method: "POST",
+      body: form,
+    });
   },
   attachWorkspaceAsset: (
     workspaceSlug: string,
@@ -279,6 +348,132 @@ export const api = {
     params.set("sort", sort);
     return request<SearchResult>(`/workspaces/${workspaceSlug}/cards?${params.toString()}`);
   },
+  listPlotEvents: (workspaceSlug: string, status = "", q = "") => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (q) params.set("q", q);
+    const query = params.toString();
+    return request<PlotEventList>(`/workspaces/${workspaceSlug}/plot-events${query ? `?${query}` : ""}`);
+  },
+  createPlotEvent: (workspaceSlug: string, payload: PlotEventCreatePayload) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events`, { method: "POST", json: payload }),
+  updatePlotEvent: (workspaceSlug: string, eventId: number, payload: PlotEventUpdatePayload) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events/${eventId}`, { method: "PATCH", json: payload }),
+  deletePlotEvent: (workspaceSlug: string, eventId: number) =>
+    request<ActionStatus>(`/workspaces/${workspaceSlug}/plot-events/${eventId}`, { method: "DELETE" }),
+  addPlotEventCardLink: (workspaceSlug: string, eventId: number, payload: { card_id: number; role?: string }) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events/${eventId}/card-links`, {
+      method: "POST",
+      json: payload,
+    }),
+  deletePlotEventCardLink: (workspaceSlug: string, linkId: number) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events/card-links/${linkId}`, { method: "DELETE" }),
+  addPlotEventLink: (
+    workspaceSlug: string,
+    eventId: number,
+    payload: { target_event_id: number; relation_type?: string; note?: string },
+  ) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events/${eventId}/event-links`, {
+      method: "POST",
+      json: payload,
+    }),
+  deletePlotEventLink: (workspaceSlug: string, linkId: number) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events/event-links/${linkId}`, { method: "DELETE" }),
+  updatePlotEventLayout: (
+    workspaceSlug: string,
+    eventId: number,
+    payload: { view_id?: string; x: number; y: number; width: number; height: number },
+  ) =>
+    request<PlotEvent>(`/workspaces/${workspaceSlug}/plot-events/${eventId}/layout`, {
+      method: "PATCH",
+      json: payload,
+    }),
+  listChapters: (workspaceSlug: string) =>
+    request<ChapterList>(`/workspaces/${workspaceSlug}/chapters`),
+  createChapter: (workspaceSlug: string, payload: ChapterCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters`, { method: "POST", json: payload }),
+  updateChapter: (workspaceSlug: string, chapterId: number, payload: ChapterUpdatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/${chapterId}`, { method: "PATCH", json: payload }),
+  deleteChapter: (workspaceSlug: string, chapterId: number) =>
+    request<ActionStatus>(`/workspaces/${workspaceSlug}/chapters/${chapterId}`, { method: "DELETE" }),
+  addChapterReference: (workspaceSlug: string, chapterId: number, payload: ReferenceCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/${chapterId}/references`, { method: "POST", json: payload }),
+  deleteChapterReference: (workspaceSlug: string, referenceId: number) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/references/${referenceId}`, { method: "DELETE" }),
+  createScene: (workspaceSlug: string, chapterId: number, payload: SceneCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/${chapterId}/scenes`, { method: "POST", json: payload }),
+  updateScene: (workspaceSlug: string, sceneId: number, payload: SceneUpdatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/${sceneId}`, { method: "PATCH", json: payload }),
+  deleteScene: (workspaceSlug: string, sceneId: number) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/${sceneId}`, { method: "DELETE" }),
+  addSceneReference: (workspaceSlug: string, sceneId: number, payload: ReferenceCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/${sceneId}/references`, { method: "POST", json: payload }),
+  deleteSceneReference: (workspaceSlug: string, referenceId: number) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/references/${referenceId}`, { method: "DELETE" }),
+  createSceneToken: (workspaceSlug: string, sceneId: number, payload: SceneTokenCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/${sceneId}/tokens`, { method: "POST", json: payload }),
+  updateSceneToken: (workspaceSlug: string, tokenId: number, payload: SceneTokenUpdatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/tokens/${tokenId}`, { method: "PATCH", json: payload }),
+  deleteSceneToken: (workspaceSlug: string, tokenId: number) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/tokens/${tokenId}`, { method: "DELETE" }),
+  createChapterDiceShortcut: (workspaceSlug: string, chapterId: number, payload: DiceShortcutCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/${chapterId}/dice-shortcuts`, { method: "POST", json: payload }),
+  createSceneDiceShortcut: (workspaceSlug: string, sceneId: number, payload: DiceShortcutCreatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/scenes/${sceneId}/dice-shortcuts`, { method: "POST", json: payload }),
+  updateDiceShortcut: (workspaceSlug: string, shortcutId: number, payload: DiceShortcutUpdatePayload) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/dice-shortcuts/${shortcutId}`, { method: "PATCH", json: payload }),
+  deleteDiceShortcut: (workspaceSlug: string, shortcutId: number) =>
+    request<Chapter>(`/workspaces/${workspaceSlug}/chapters/dice-shortcuts/${shortcutId}`, { method: "DELETE" }),
+  listBoards: (workspaceSlug: string) =>
+    request<BoardList>(`/workspaces/${workspaceSlug}/boards`),
+  createBoard: (workspaceSlug: string, payload: BoardCreatePayload) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards`, { method: "POST", json: payload }),
+  updateBoard: (workspaceSlug: string, boardId: number, payload: BoardUpdatePayload) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/${boardId}`, { method: "PATCH", json: payload }),
+  deleteBoard: (workspaceSlug: string, boardId: number) =>
+    request<ActionStatus>(`/workspaces/${workspaceSlug}/boards/${boardId}`, { method: "DELETE" }),
+  createBoardItem: (workspaceSlug: string, boardId: number, payload: BoardItemCreatePayload) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/${boardId}/items`, { method: "POST", json: payload }),
+  updateBoardItem: (workspaceSlug: string, itemId: number, payload: BoardItemUpdatePayload) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/items/${itemId}`, { method: "PATCH", json: payload }),
+  deleteBoardItem: (workspaceSlug: string, itemId: number) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/items/${itemId}`, { method: "DELETE" }),
+  createBoardEdge: (
+    workspaceSlug: string,
+    boardId: number,
+    payload: { source_item_id: number; target_item_id: number; relation_type?: string; label?: string },
+  ) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/${boardId}/edges`, { method: "POST", json: payload }),
+  updateBoardEdge: (
+    workspaceSlug: string,
+    edgeId: number,
+    payload: { relation_type?: string; label?: string },
+  ) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/edges/${edgeId}`, { method: "PATCH", json: payload }),
+  deleteBoardEdge: (workspaceSlug: string, edgeId: number) =>
+    request<Board>(`/workspaces/${workspaceSlug}/boards/edges/${edgeId}`, { method: "DELETE" }),
+  listCharacterGroups: (workspaceSlug: string) =>
+    request<CharacterGroup[]>(`/workspaces/${workspaceSlug}/characters/groups`),
+  createCharacterGroup: (
+    workspaceSlug: string,
+    payload: { name: string; slug: string; color?: string; description?: string },
+  ) =>
+    request<CharacterGroup>(`/workspaces/${workspaceSlug}/characters/groups`, { method: "POST", json: payload }),
+  updateCharacterGroup: (
+    workspaceSlug: string,
+    groupId: number,
+    payload: Partial<{ name: string; slug: string; color: string; description: string; sort_order: number }>,
+  ) =>
+    request<CharacterGroup>(`/workspaces/${workspaceSlug}/characters/groups/${groupId}`, { method: "PATCH", json: payload }),
+  deleteCharacterGroup: (workspaceSlug: string, groupId: number) =>
+    request<ActionStatus>(`/workspaces/${workspaceSlug}/characters/groups/${groupId}`, { method: "DELETE" }),
+  getCharacterGraph: (workspaceSlug: string, graphId = "default") =>
+    request<CharacterGraph>(`/workspaces/${workspaceSlug}/characters/graph?graph_id=${encodeURIComponent(graphId)}`),
+  updateCharacterGraphLayout: (
+    workspaceSlug: string,
+    payload: { graph_id?: string; card_id: number; x: number; y: number; width?: number; height?: number },
+  ) =>
+    request<CharacterGraph>(`/workspaces/${workspaceSlug}/characters/graph/layout`, { method: "PATCH", json: payload }),
   getCard: (workspaceSlug: string, cardId: number) =>
     request<CardDetail>(`/workspaces/${workspaceSlug}/cards/${cardId}`),
   createCard: (workspaceSlug: string, payload: CardCreatePayload) =>

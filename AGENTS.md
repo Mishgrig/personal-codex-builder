@@ -2,7 +2,18 @@
 
 ## Project identity
 
-This repository is a local-first, single-user codex application. Core workflows must keep working on one machine, with local files and local databases, even when there is no internet connection.
+This repository is a local-first, single-user codex application evolving into an offline RPG/worldbuilding workspace for tabletop RPG game masters, RPG creators, writers, and worldbuilding authors. Core workflows must keep working on one machine, with local files and local databases, even when there is no internet connection.
+
+The current product source of truth is the user's Notion project hub:
+
+- https://app.notion.com/p/39d2e0c1694780d2b461f1af04f85464
+
+The current product model has two primary modes:
+
+- `CRUD`: create, read, update, and delete world material.
+- `Play`: run prepared scenes.
+
+There is no separate `Review` mode in the current roadmap. Post-session cleanup belongs to `CRUD`.
 
 The product already has a useful foundation:
 
@@ -93,6 +104,7 @@ Keep all changes aligned with the local-first roadmap from the project improveme
 - Keep modal state, panel state, temporary filters, and other UI-only concerns in Zustand or component state.
 - Preserve the current feature-based organization and move toward a clearer `shared/` plus `features/` split as the codebase grows.
 - When forms use Zod defaults, be explicit about input versus output types so newer `react-hook-form` and resolver versions stay type-safe.
+- Public product language should gradually move toward Worlds, Entities, Chapters, Scenes, CRUD, and Play while preserving internal Card/Card Type/Workspace compatibility until focused migrations are planned.
 
 ## Verification commands
 
@@ -124,3 +136,6 @@ Unless the user explicitly overrides the direction, assume the repository should
 - keep workspace metadata explicit with `workspace_manifest.json`, compatibility `workspace.json`, and workspace-local `backups/` and `exports/` folders;
 - standardize API success and error envelopes;
 - improve frontend structure and shared components only after the data and workspace foundation is stable.
+- treat RPG/worldbuilding as core product direction, not optional late scope;
+- do not port Electron/AppBridge/better-sqlite3 architecture from the `НРИ стол` prototype;
+- keep Play Mode GM/player visibility scoped to active scene materials, not global entity records.

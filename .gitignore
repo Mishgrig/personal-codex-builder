@@ -100,3 +100,6 @@ tmp-qa/
 .DS_Store
 .vscode/
 .idea/
+
+# Local third-party UX reference evidence
+docs/research/forgetales-audit/screenshots/

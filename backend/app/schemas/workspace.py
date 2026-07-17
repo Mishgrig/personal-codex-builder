@@ -17,6 +17,7 @@ class WorkspaceUpdate(BaseModel):
     description: str | None = None
     theme: str | None = None
     taxonomy_labels: dict[str, str] | None = None
+    ui_preferences: dict[str, Any] | None = None
 
 
 class WorkspaceSummary(BaseModel):
@@ -34,6 +35,7 @@ class WorkspaceSummary(BaseModel):
     created_at: datetime
     updated_at: datetime
     taxonomy_labels: dict[str, str]
+    ui_preferences: dict[str, Any] = Field(default_factory=dict)
 
 
 class WorkspaceCopy(BaseModel):
@@ -118,6 +120,24 @@ class WorkspaceHealthRead(BaseModel):
     schema_version: str
     app_version: str
     issue_count: int = 0
+    checks: list[WorkspaceHealthCheckRead] = Field(default_factory=list)
+    categories: dict[str, WorkspaceHealthCategoryRead] = Field(default_factory=dict)
+
+
+class WorkspacePortabilityRead(BaseModel):
+    workspace_slug: str
+    checked_at: datetime
+    status: str
+    issue_count: int = 0
+    required_tables: list[str] = Field(default_factory=list)
+    present_tables: list[str] = Field(default_factory=list)
+    missing_tables: list[str] = Field(default_factory=list)
+    db_included: bool
+    metadata_included: bool
+    files_dir_present: bool
+    asset_file_count: int
+    backup_count: int
+    export_count: int
     checks: list[WorkspaceHealthCheckRead] = Field(default_factory=list)
     categories: dict[str, WorkspaceHealthCategoryRead] = Field(default_factory=dict)
 

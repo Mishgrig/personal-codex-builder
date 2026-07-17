@@ -38,6 +38,7 @@ function makeProps() {
           subtype: "Subtype",
           layer: "Layer",
         },
+        ui_preferences: {},
       },
     ],
     activeWorkspace: {
@@ -60,6 +61,7 @@ function makeProps() {
         subtype: "Subtype",
         layer: "Layer",
       },
+      ui_preferences: {},
     },
     selectedCard: null,
     archivedWorkspaces: [
@@ -83,6 +85,7 @@ function makeProps() {
           subtype: "Subtype",
           layer: "Layer",
         },
+        ui_preferences: {},
       },
     ],
     backups: [
@@ -141,6 +144,31 @@ function makeProps() {
         },
       },
     },
+    portability: {
+      workspace_slug: "personal",
+      checked_at: "2026-07-03T10:11:00Z",
+      status: "ready",
+      issue_count: 0,
+      required_tables: ["workspace_settings", "cards", "plot_events", "boards"],
+      present_tables: ["workspace_settings", "cards", "plot_events", "boards"],
+      missing_tables: [],
+      db_included: true,
+      metadata_included: true,
+      files_dir_present: true,
+      asset_file_count: 1,
+      backup_count: 1,
+      export_count: 1,
+      checks: [
+        {
+          key: "portable_required_tables",
+          category: "database",
+          status: "ok",
+          message: "All durable feature tables are present.",
+          details: { missing_tables: [] },
+        },
+      ],
+      categories: {},
+    },
     assetHealth: {
       workspace_slug: "personal",
       checked_at: "2026-07-03T10:11:00Z",
@@ -189,11 +217,13 @@ function makeProps() {
     onRepairWorkspaceHealth: vi.fn().mockResolvedValue(undefined),
     onRepairAssetHealth: vi.fn().mockResolvedValue(undefined),
     onRenameWorkspace: vi.fn().mockResolvedValue(undefined),
+    onUpdateWorkspacePreferences: vi.fn(),
     onDuplicateWorkspace: vi.fn().mockResolvedValue(undefined),
     onDeleteWorkspace: vi.fn().mockResolvedValue(undefined),
     onCreateBackup: vi.fn().mockResolvedValue(undefined),
     onExportWorkspace: vi.fn().mockResolvedValue(undefined),
     onExportWorkspaceData: vi.fn().mockResolvedValue(undefined),
+    onShareSelectedCard: vi.fn().mockResolvedValue(undefined),
     onArchiveWorkspace: vi.fn().mockResolvedValue(undefined),
     onUnarchiveWorkspace: vi.fn().mockResolvedValue(undefined),
     onImportWorkspace: vi.fn().mockResolvedValue(undefined),
@@ -203,20 +233,20 @@ function makeProps() {
 }
 
 describe("WorkspaceManagerPanel", () => {
-  it("renders local status, health, and backups", () => {
+  it("renders database status, health, and backups", () => {
     const props = makeProps();
     render(<WorkspaceManagerPanel {...props} />);
 
-    expect(screen.getByText("Local Status")).toBeInTheDocument();
-    expect(screen.getAllByText("Manage databases")[0]).toBeInTheDocument();
-    expect(screen.getByText("Databases")).toBeInTheDocument();
-    expect(screen.getByText("Data Health")).toBeInTheDocument();
+    expect(screen.getByText("Status")).toBeInTheDocument();
+    expect(screen.getAllByText("Manage worlds")[0]).toBeInTheDocument();
+    expect(screen.getByText("Worlds")).toBeInTheDocument();
+    expect(screen.getByText("Workspace health")).toBeInTheDocument();
     expect(screen.getByText("Asset Library")).toBeInTheDocument();
-    expect(screen.getByText("Backup Manager")).toBeInTheDocument();
+    expect(screen.getAllByText("Backups")[0]).toBeInTheDocument();
     expect(screen.getByText("Backup created successfully.")).toBeInTheDocument();
-    expect(screen.getByText("Archive workspace")).toBeInTheDocument();
-    expect(screen.getByText("Save database details")).toBeInTheDocument();
-    expect(screen.getByText("Duplicate database")).toBeInTheDocument();
+    expect(screen.getByText("Archive world")).toBeInTheDocument();
+    expect(screen.getByText("Save world details")).toBeInTheDocument();
+    expect(screen.getByText("Duplicate world")).toBeInTheDocument();
   });
 
   it("invokes backup and restore actions", () => {
@@ -241,13 +271,14 @@ describe("WorkspaceManagerPanel", () => {
         activeWorkspace={null}
         backups={[]}
         health={null}
+        portability={null}
         assetHealth={null}
         message={null}
       />,
     );
 
     expect(
-      screen.getByText("Create a new database or unarchive an older one to start working."),
+      screen.getByText("Create a new world or unarchive an older one to start working."),
     ).toBeInTheDocument();
     expect(screen.getByText("No backups yet")).toBeInTheDocument();
   });

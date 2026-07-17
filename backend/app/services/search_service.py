@@ -129,7 +129,9 @@ def index_card(session: Session, card: Card) -> None:
             "categories_plain_text": taxonomy_text,
             "sources_plain_text": source_text,
             "relations_plain_text": relation_text,
-            "combined_plain_text": " ".join([card.title, card.summary, card.body_text, dynamic_text, taxonomy_text, source_text, relation_text]),
+            "combined_plain_text": " ".join(
+                [card.title, card.summary, card.body_text, dynamic_text, taxonomy_text, source_text, attachment_text, relation_text]
+            ),
         },
     )
 
